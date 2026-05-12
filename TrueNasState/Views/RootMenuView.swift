@@ -17,7 +17,7 @@ struct RootMenuView: View {
                 LoginView()
             }
         }
-        .frame(width: 280)
+        .frame(width: 260)
         .padding(12)
     }
 }

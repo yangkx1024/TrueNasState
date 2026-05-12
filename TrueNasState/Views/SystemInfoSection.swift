@@ -15,9 +15,6 @@ struct SystemInfoSection: View {
                 if let uptime = info?.formattedUptime {
                     Row(label: "Uptime", value: uptime)
                 }
-                if let model = info?.model {
-                    Row(label: "CPU Model", value: model)
-                }
                 if let cpu = stats?.cpuUsagePercent {
                     Row(label: "CPU Usage", value: String(format: "%.1f%%", cpu))
                 }

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct DashboardView: View {
@@ -26,7 +27,13 @@ struct DashboardView: View {
                 Text(viewModel.systemInfo?.hostname ?? viewModel.endpoint?.host ?? "TrueNAS")
                     .font(.headline)
                 if let v = viewModel.systemInfo?.version {
-                    Text(v).font(.caption).foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        Text(v).foregroundStyle(.secondary)
+                        if viewModel.systemUpdateAvailable {
+                            LinkButton(label: "Update available", action: openSystemUpdatePage)
+                        }
+                    }
+                    .font(.caption)
                 }
             }
             Spacer()
@@ -36,6 +43,13 @@ struct DashboardView: View {
                     .foregroundStyle(.tertiary)
             }
         }
+    }
+
+    private func openSystemUpdatePage() {
+        guard let endpoint = viewModel.endpoint,
+              let url = URL(string: "/ui/system/update", relativeTo: endpoint)
+        else { return }
+        NSWorkspace.shared.open(url)
     }
 
     private var footer: some View {

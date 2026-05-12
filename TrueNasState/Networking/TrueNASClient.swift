@@ -130,13 +130,22 @@ actor TrueNASClient {
         }
     }
 
-    func subscribe(event: String) async throws -> AsyncStream<JSONValue> {
-        _ = try? await callRaw(method: "core.subscribe", params: [event])
+    /// `deliveryKey` lets the caller subscribe to a parameterized event name
+    /// (e.g. `"app.stats:{\"interval\":5}"`) while receiving notifications under
+    /// the canonical collection (`"app.stats"`).
+    func subscribe(event: String, deliveryKey: String? = nil) async throws -> AsyncStream<JSONValue> {
+        do {
+            _ = try await callRaw(method: "core.subscribe", params: [event])
+        } catch {
+            print("[core.subscribe \(event)] failed: \(error)")
+            throw error
+        }
+        let key = deliveryKey ?? event
         let id = UUID()
         let (stream, continuation) = AsyncStream.makeStream(of: JSONValue.self)
-        subscribers[event, default: [:]][id] = continuation
+        subscribers[key, default: [:]][id] = continuation
         continuation.onTermination = { [weak self] _ in
-            Task { await self?.removeSubscriber(event: event, id: id) }
+            Task { await self?.removeSubscriber(event: key, id: id) }
         }
         return stream
     }

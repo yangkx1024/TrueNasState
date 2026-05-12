@@ -19,7 +19,44 @@ extension TrueNASClient {
     }
 
     func fetchApps() async throws -> [TNApp] {
-        try await call("app.query", params: [[], ["select": ["id", "name", "state", "upgrade_available"]]], as: [TNApp].self)
+        try await call(
+            "app.query",
+            params: [[], ["select": ["id", "name", "state", "upgrade_available", "metadata"]]],
+            as: [TNApp].self
+        )
+    }
+
+    /// Kicks off an app upgrade. TrueNAS returns a job id immediately and runs
+    /// the upgrade asynchronously; the new state is picked up by `app.query`.
+    func upgradeApp(name: String) async throws {
+        _ = try await callRaw(method: "app.upgrade", params: [name])
+    }
+
+    /// Returns true when TrueNAS reports a system upgrade is available.
+    /// `update.check_available` queries the upstream update server, so this
+    /// is meant for occasional checks (connect / manual refresh), not polling.
+    func fetchSystemUpdateAvailable() async throws -> Bool {
+        let raw = try await callRaw(method: "update.check_available", params: [])
+        return raw.objectValue?["status"]?.stringValue == "AVAILABLE"
+    }
+
+    /// Returns a `catalogName -> icon URL` map gathered from `catalog.apps`,
+    /// which is the only TrueNAS surface that exposes per-app icons.
+    func fetchCatalogIcons() async throws -> [String: URL] {
+        let raw = try await callRaw(
+            method: "catalog.apps",
+            params: [["cache": true, "retrieve_all_trains": true]]
+        )
+        var result: [String: URL] = [:]
+        for (_, trainValue) in raw.objectValue ?? [:] {
+            for (appName, appValue) in trainValue.objectValue ?? [:] {
+                if let urlString = appValue.objectValue?["icon_url"]?.stringValue,
+                   let url = URL(string: urlString) {
+                    result[appName] = url
+                }
+            }
+        }
+        return result
     }
 
     /// `reporting.realtime` is published as a stream of stat snapshots once subscribed.
@@ -40,5 +77,20 @@ extension TrueNASClient {
     /// Subscribe to alert changes so the badge count stays live.
     func subscribeAlerts() async throws -> AsyncStream<JSONValue> {
         try await subscribe(event: "alert.list")
+    }
+
+    /// `app.stats` is published as a stream once subscribed (2 s default interval).
+    func subscribeAppStats() async throws -> AsyncStream<[AppLiveStat]> {
+        let raw = try await subscribe(event: "app.stats")
+        return AsyncStream { continuation in
+            Task {
+                for await value in raw {
+                    if let stats = AppLiveStat.parse(value) {
+                        continuation.yield(stats)
+                    }
+                }
+                continuation.finish()
+            }
+        }
     }
 }

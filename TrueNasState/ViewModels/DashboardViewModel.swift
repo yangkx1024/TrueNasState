@@ -10,6 +10,10 @@ final class DashboardViewModel {
     var apps: [TNApp] = []
     var alerts: [TNAlert] = []
     var stats: RealtimeStats?
+    var appStats: [String: AppLiveStat] = [:]
+    var appIcons: [String: URL] = [:]
+    var upgradingApps: Set<String> = []
+    var systemUpdateAvailable = false
     var lastUpdated: Date?
     private(set) var screen: Screen = .dashboard
     private(set) var endpoint: URL?
@@ -19,6 +23,7 @@ final class DashboardViewModel {
     private let credentials = CredentialStore.shared
     private var client: TrueNASClient?
     private var workers: [Task<Void, Never>] = []
+    private var appStatsTask: Task<Void, Never>?
     private var didBootstrap = false
 
     init() {
@@ -28,7 +33,13 @@ final class DashboardViewModel {
 
     var activeAlertCount: Int { alerts.filter { $0.isActive }.count }
 
-    func navigate(to screen: Screen) { self.screen = screen }
+    func navigate(to screen: Screen) {
+        self.screen = screen
+        switch screen {
+        case .appList: startAppStatsSubscription()
+        case .dashboard: stopAppStatsSubscription()
+        }
+    }
 
     func bootstrap() async {
         guard !didBootstrap else { return }
@@ -60,6 +71,10 @@ final class DashboardViewModel {
         apps = []
         alerts = []
         stats = nil
+        appStats = [:]
+        appIcons = [:]
+        upgradingApps = []
+        systemUpdateAvailable = false
         lastUpdated = nil
         endpoint = nil
         screen = .dashboard
@@ -67,7 +82,23 @@ final class DashboardViewModel {
         authState = .loggedOut(error: nil)
     }
 
-    func refresh() async { await loadSnapshot() }
+    func refresh() async {
+        async let snapshot: Void = loadSnapshot()
+        async let updateStatus: Void = loadSystemUpdateStatus()
+        _ = await (snapshot, updateStatus)
+    }
+
+    func upgradeApp(_ app: TNApp) async {
+        guard let client, !upgradingApps.contains(app.id) else { return }
+        upgradingApps.insert(app.id)
+        defer { upgradingApps.remove(app.id) }
+        do {
+            try await client.upgradeApp(name: app.id)
+            await loadSnapshot()
+        } catch {
+            print("[upgrade] \(app.id) failed: \(error.localizedDescription)")
+        }
+    }
 
     // MARK: - Internals
 
@@ -93,9 +124,29 @@ final class DashboardViewModel {
             try? credentials.save(Credentials(endpoint: endpoint, apiKey: apiKey))
         }
 
-        await loadSnapshot()
+        async let snapshot: Void = loadSnapshot()
+        async let icons: Void = loadCatalogIcons()
+        async let updateStatus: Void = loadSystemUpdateStatus()
+        _ = await (snapshot, icons, updateStatus)
         startSubscriptions()
         startPeriodicRefresh()
+    }
+
+    private func loadCatalogIcons() async {
+        guard let client, appIcons.isEmpty else { return }
+        if let icons = try? await client.fetchCatalogIcons(), !icons.isEmpty {
+            appIcons = icons
+        }
+    }
+
+    private func loadSystemUpdateStatus() async {
+        guard let client else { return }
+        // Coalesce probe error to false so a stale `true` doesn't persist if the
+        // upstream update server becomes unreachable after a previous success.
+        let available = (try? await client.fetchSystemUpdateAvailable()) ?? false
+        if available != systemUpdateAvailable {
+            systemUpdateAvailable = available
+        }
     }
 
     private func loadSnapshot() async {
@@ -168,8 +219,30 @@ final class DashboardViewModel {
     private func stop() async {
         for task in workers { task.cancel() }
         workers.removeAll()
+        stopAppStatsSubscription()
         await client?.disconnect()
         client = nil
+    }
+
+    private func startAppStatsSubscription() {
+        guard appStatsTask == nil, let client else { return }
+        appStatsTask = Task { [weak self] in
+            guard let stream = try? await client.subscribeAppStats() else { return }
+            for await frame in stream {
+                if Task.isCancelled { return }
+                await MainActor.run {
+                    guard let self else { return }
+                    let next = Dictionary(uniqueKeysWithValues: frame.map { ($0.appName, $0) })
+                    if next != self.appStats { self.appStats = next }
+                }
+            }
+        }
+    }
+
+    private func stopAppStatsSubscription() {
+        appStatsTask?.cancel()
+        appStatsTask = nil
+        if !appStats.isEmpty { appStats = [:] }
     }
 
     static func normalizeEndpoint(_ raw: String) -> URL? {

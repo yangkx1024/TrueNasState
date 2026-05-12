@@ -5,7 +5,6 @@ struct SystemInfo: Decodable, Equatable {
     let hostname: String?
     let uptimeSeconds: Double?
     let physicalMemory: Int64?
-    let model: String?
     let systemProduct: String?
     /// `loadavg` is an array of three numbers: 1m, 5m, 15m. The `reporting.realtime`
     /// event does NOT carry load average, so this is the only place to surface it.
@@ -16,7 +15,6 @@ struct SystemInfo: Decodable, Equatable {
         case hostname
         case uptimeSeconds = "uptime_seconds"
         case physicalMemory = "physmem"
-        case model
         case systemProduct = "system_product"
         case loadAverages = "loadavg"
     }

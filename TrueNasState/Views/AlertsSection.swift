@@ -7,11 +7,12 @@ struct AlertsSection: View {
         SectionContainer(title: "Alerts", systemImage: "bell.badge") {
             let active = viewModel.alerts.filter { $0.isActive }
             if active.isEmpty {
-                HStack {
+                Label {
+                    Text("No active alerts.").foregroundStyle(.secondary)
+                } icon: {
                     Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
-                    Text("No active alerts.")
-                        .font(.caption).foregroundStyle(.secondary)
                 }
+                .font(.caption)
             } else {
                 Text("\(active.count) active")
                     .font(.caption2)
