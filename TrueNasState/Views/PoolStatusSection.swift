@@ -24,9 +24,6 @@ private struct PoolRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 4) {
-                Circle()
-                    .fill(pool.isHealthy ? .green : .red)
-                    .frame(width: 6, height: 6)
                 Text(pool.name).font(.caption).bold()
                 if let line = pool.formattedUsage {
                     Text("(\(line))").font(.caption2).foregroundStyle(.secondary)
@@ -34,7 +31,7 @@ private struct PoolRow: View {
                 Spacer()
                 Text(pool.localizedStatus)
                     .font(.caption2)
-                    .foregroundStyle(pool.isHealthy ? Color.secondary : Color.red)
+                    .foregroundStyle(pool.isHealthy ? Color.green : Color.red)
             }
             if let usage = pool.usageFraction {
                 ProgressView(value: usage)
