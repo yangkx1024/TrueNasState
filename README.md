@@ -1,4 +1,4 @@
-# TrueNasState
+# TrueStats
 
 A lightweight macOS menu-bar app for monitoring a TrueNAS SCALE server. It lives in the status bar, surfaces active alert counts at a glance, and opens a popover with a live dashboard of pools, apps, and realtime system stats.
 
