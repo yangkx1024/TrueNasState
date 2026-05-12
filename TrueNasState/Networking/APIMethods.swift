@@ -26,10 +26,15 @@ extension TrueNASClient {
         )
     }
 
-    /// Kicks off an app upgrade. TrueNAS returns a job id immediately and runs
-    /// the upgrade asynchronously; the new state is picked up by `app.query`.
-    func upgradeApp(name: String) async throws {
-        _ = try await callRaw(method: "app.upgrade", params: [name])
+    /// Starts an app upgrade and returns the TrueNAS job id; the upgrade itself
+    /// runs asynchronously and completion is reported via `subscribeJobs()`.
+    @discardableResult
+    func upgradeApp(name: String) async throws -> Int {
+        let raw = try await callRaw(method: "app.upgrade", params: [name])
+        guard let jobID = raw.intValue else {
+            throw TrueNASClientError.unexpectedMessage
+        }
+        return jobID
     }
 
     /// Returns true when TrueNAS reports a system upgrade is available.
@@ -82,6 +87,23 @@ extension TrueNASClient {
     /// TrueNAS only emits a delta payload per event; consumers re-fetch via `app.query`.
     func subscribeApps() async throws -> AsyncStream<JSONValue> {
         try await subscribe(event: "app.query")
+    }
+
+    /// Live updates from `core.get_jobs`. Reads `id` and `state` straight off the
+    /// raw `JSONValue` so a busy server doesn't pay decode cost on every frame.
+    func subscribeJobs() async throws -> AsyncStream<TNJob> {
+        let raw = try await subscribe(event: "core.get_jobs")
+        return AsyncStream { continuation in
+            Task {
+                for await value in raw {
+                    guard let fields = value.objectValue?["fields"]?.objectValue,
+                          let id = fields["id"]?.intValue else { continue }
+                    let state = fields["state"]?.stringValue.flatMap(TNJobState.init(rawValue:))
+                    continuation.yield(TNJob(id: id, state: state))
+                }
+                continuation.finish()
+            }
+        }
     }
 
     /// `app.stats` is published as a stream once subscribed (2 s default interval).

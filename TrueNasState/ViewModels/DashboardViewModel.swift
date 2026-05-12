@@ -13,6 +13,7 @@ final class DashboardViewModel {
     var appStats: [String: AppLiveStat] = [:]
     var appIcons: [String: URL] = [:]
     var upgradingApps: Set<String> = []
+    private var jobIDToAppID: [Int: String] = [:]
     var systemUpdateAvailable = false
     var lastUpdated: Date?
     private(set) var screen: Screen = .dashboard
@@ -83,7 +84,6 @@ final class DashboardViewModel {
         stats = nil
         appStats = [:]
         appIcons = [:]
-        upgradingApps = []
         systemUpdateAvailable = false
         lastUpdated = nil
         endpoint = nil
@@ -95,11 +95,13 @@ final class DashboardViewModel {
     func upgradeApp(_ app: TNApp) async {
         guard let client, !upgradingApps.contains(app.id) else { return }
         upgradingApps.insert(app.id)
-        defer { upgradingApps.remove(app.id) }
         do {
-            try await client.upgradeApp(name: app.id)
+            let jobID = try await client.upgradeApp(name: app.id)
+            jobIDToAppID[jobID] = app.id
+            // Surface RUNNING → DEPLOYING before the job stream fires.
             await loadSnapshot()
         } catch {
+            upgradingApps.remove(app.id)
             print("[upgrade] \(app.id) failed: \(error.localizedDescription)")
         }
     }
@@ -255,6 +257,22 @@ final class DashboardViewModel {
             fetch: { try await client.fetchApps() },
             keyPath: \.apps
         ))
+
+        let jobsTask = Task { [weak self] in
+            guard let stream = try? await client.subscribeJobs() else { return }
+            for await job in stream {
+                if Task.isCancelled { return }
+                await MainActor.run {
+                    guard let self else { return }
+                    guard let appID = self.jobIDToAppID[job.id] else { return }
+                    if job.isTerminal {
+                        self.upgradingApps.remove(appID)
+                        self.jobIDToAppID.removeValue(forKey: job.id)
+                    }
+                }
+            }
+        }
+        workers.append(jobsTask)
     }
 
     /// Subscribes to a TrueNAS collection event and re-fetches via `fetch` on each
@@ -292,6 +310,10 @@ final class DashboardViewModel {
     private func stop() async {
         for task in workers { task.cancel() }
         workers.removeAll()
+        // Clear here so a reconnect can't leak stale job→app bindings whose
+        // terminal events were swallowed by the dropped subscription.
+        upgradingApps = []
+        jobIDToAppID = [:]
         stopAppStatsSubscription()
         demoTickerTask?.cancel()
         demoTickerTask = nil

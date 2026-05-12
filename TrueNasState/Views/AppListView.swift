@@ -81,7 +81,7 @@ private struct AppRow: View {
 
     @ViewBuilder
     private var upgradeIndicator: some View {
-        if isUpgrading {
+        if isUpgrading || app.state == .deploying {
             HStack(spacing: 4) {
                 ProgressView().controlSize(.mini)
                 Text("Updating…").foregroundStyle(.orange)
