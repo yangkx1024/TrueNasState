@@ -21,6 +21,16 @@ struct TNAlert: Decodable, Identifiable, Equatable {
         case datetime
     }
 
+    init(id: String, level: String?, formatted: String?, text: String?,
+         dismissed: Bool?, datetime: Date?) {
+        self.id = id
+        self.level = level
+        self.formatted = formatted
+        self.text = text
+        self.dismissed = dismissed
+        self.datetime = datetime
+    }
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         // The API exposes both `uuid` and a string `id` — prefer the stable uuid.

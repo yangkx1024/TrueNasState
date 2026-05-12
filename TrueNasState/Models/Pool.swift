@@ -13,6 +13,17 @@ struct Pool: Decodable, Identifiable, Equatable {
         case id, name, status, healthy, size, allocated, free
     }
 
+    init(id: Int, name: String, status: String?, healthy: Bool?,
+         size: Int64?, allocated: Int64?, free: Int64?) {
+        self.id = id
+        self.name = name
+        self.status = status
+        self.healthy = healthy
+        self.size = size
+        self.allocated = allocated
+        self.free = free
+    }
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.id = (try? c.decode(Int.self, forKey: .id)) ?? 0

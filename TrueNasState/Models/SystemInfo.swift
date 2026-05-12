@@ -19,6 +19,16 @@ struct SystemInfo: Decodable, Equatable {
         case loadAverages = "loadavg"
     }
 
+    init(version: String?, hostname: String?, uptimeSeconds: Double?,
+         physicalMemory: Int64?, systemProduct: String?, loadAverages: [Double]?) {
+        self.version = version
+        self.hostname = hostname
+        self.uptimeSeconds = uptimeSeconds
+        self.physicalMemory = physicalMemory
+        self.systemProduct = systemProduct
+        self.loadAverages = loadAverages
+    }
+
     var loadAverage1m: Double? { loadAverages?.first }
 
     var formattedUptime: String? {

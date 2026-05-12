@@ -26,6 +26,7 @@ final class DashboardViewModel {
     private var appStatsTask: Task<Void, Never>?
     private var didBootstrap = false
     private var reconnectController: ReconnectController?
+    private var demoTickerTask: Task<Void, Never>?
 
     init() {
         // The menu-bar popover is rebuilt on every click, so .task would re-fire login.
@@ -47,6 +48,10 @@ final class DashboardViewModel {
         didBootstrap = true
         guard let saved = credentials.load() else {
             authState = .loggedOut(error: nil)
+            return
+        }
+        if DemoMode.matches(endpoint: saved.endpoint, apiKey: saved.apiKey) {
+            await enterDemoMode(endpoint: saved.endpoint, apiKey: saved.apiKey, persistOnSuccess: false)
             return
         }
         authState = .connecting
@@ -102,6 +107,10 @@ final class DashboardViewModel {
     // MARK: - Internals
 
     private func connect(endpoint: URL, apiKey: String, persistOnSuccess: Bool) async {
+        if DemoMode.matches(endpoint: endpoint, apiKey: apiKey) {
+            await enterDemoMode(endpoint: endpoint, apiKey: apiKey, persistOnSuccess: persistOnSuccess)
+            return
+        }
         authState = .connecting
         do {
             try await connectOnce(endpoint: endpoint, apiKey: apiKey)
@@ -284,8 +293,47 @@ final class DashboardViewModel {
         for task in workers { task.cancel() }
         workers.removeAll()
         stopAppStatsSubscription()
+        demoTickerTask?.cancel()
+        demoTickerTask = nil
         await client?.disconnect()
         client = nil
+    }
+
+    private func enterDemoMode(endpoint: URL, apiKey: String, persistOnSuccess: Bool) async {
+        authState = .connecting
+        await stop()
+        self.endpoint = endpoint
+        DemoMode.populate(self)
+        authState = .loggedIn
+        if persistOnSuccess {
+            try? credentials.save(Credentials(endpoint: endpoint, apiKey: apiKey))
+        }
+        startDemoTicker()
+    }
+
+    private func startDemoTicker() {
+        demoTickerTask?.cancel()
+        demoTickerTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                if Task.isCancelled { return }
+                await MainActor.run {
+                    guard let self else { return }
+                    let cpu = max(2, min(85,
+                        (self.stats?.cpuUsagePercent ?? 12) + Double.random(in: -4...4)))
+                    let memTotal: Int64 = self.stats?.memoryTotalBytes ?? (32 * 1024 * 1024 * 1024)
+                    let memUsed = max(Int64(0), min(memTotal,
+                        (self.stats?.memoryUsedBytes ?? 8 * 1024 * 1024 * 1024)
+                            + Int64.random(in: -200_000_000...200_000_000)))
+                    var next = self.stats ?? RealtimeStats()
+                    next.merge(RealtimeStats(cpuUsagePercent: cpu,
+                                             memoryUsedBytes: memUsed,
+                                             memoryTotalBytes: memTotal))
+                    self.stats = next
+                    self.lastUpdated = Date()
+                }
+            }
+        }
     }
 
     private func startAppStatsSubscription() {

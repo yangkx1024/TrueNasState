@@ -28,6 +28,16 @@ struct TNApp: Decodable, Identifiable, Equatable {
         case appVersion = "app_version"
     }
 
+    init(id: String, name: String, version: String?, state: AppState?,
+         upgradeAvailable: Bool?, catalogName: String?) {
+        self.id = id
+        self.name = name
+        self.version = version
+        self.state = state
+        self.upgradeAvailable = upgradeAvailable
+        self.catalogName = catalogName
+    }
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.id = try c.decode(String.self, forKey: .id)
