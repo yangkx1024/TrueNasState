@@ -68,11 +68,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private static let driveIcon: NSImage = {
-        let image = NSImage(
-            systemSymbolName: "externaldrive.connected.to.line.below",
-            accessibilityDescription: nil
-        )!
+        let image = NSImage(named: "MenuBarIcon")!
         image.isTemplate = true
+        image.size = NSSize(width: 18, height: 18)
         return image
     }()
 

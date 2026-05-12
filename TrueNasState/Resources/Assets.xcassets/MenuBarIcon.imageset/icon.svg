@@ -1,0 +1,25 @@
+<svg width="500" height="500" viewBox="0 0 500 500" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="70" y="130" width="360" height="270" rx="20" stroke="black" stroke-width="12" fill="none"/>
+  
+  <rect x="100" y="400" width="40" height="25" fill="black"/>
+  <rect x="360" y="400" width="40" height="25" fill="black"/>
+  
+  <g stroke="black" stroke-width="10" fill="none">
+    <rect x="105" y="160" width="45" height="210" rx="4"/>
+    <rect x="175" y="160" width="45" height="210" rx="4"/>
+    <rect x="245" y="160" width="45" height="210" rx="4"/>
+    <rect x="315" y="160" width="45" height="210" rx="4"/>
+  </g>
+  
+  <circle cx="127.5" cy="190" r="4" fill="black"/>
+  <circle cx="197.5" cy="190" r="4" fill="black"/>
+  <circle cx="267.5" cy="190" r="4" fill="black"/>
+  <circle cx="337.5" cy="190" r="4" fill="black"/>
+  
+  <rect x="385" y="170" width="30" height="15" rx="2" fill="black"/>
+  <rect x="385" y="210" width="30" height="15" rx="2" fill="black"/>
+  <rect x="385" y="250" width="30" height="15" rx="2" fill="black"/>
+  
+  <circle cx="400" cy="315" r="10" stroke="black" stroke-width="6" fill="none" stroke-dasharray="45 15"/>
+  <circle cx="400" cy="360" r="12" fill="black"/>
+</svg>
