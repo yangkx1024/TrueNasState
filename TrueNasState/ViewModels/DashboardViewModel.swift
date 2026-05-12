@@ -212,7 +212,7 @@ final class DashboardViewModel {
 
         let statsTask = Task { [weak self] in
             guard let stream = try? await client.subscribeRealtime() else {
-                if !Task.isCancelled { await self?.notifyConnectionLost() }
+                if !Task.isCancelled { self?.notifyConnectionLost() }
                 return
             }
             for await snapshot in stream {
@@ -231,7 +231,7 @@ final class DashboardViewModel {
                     }
                 }
             }
-            if !Task.isCancelled { await self?.notifyConnectionLost() }
+            if !Task.isCancelled { self?.notifyConnectionLost() }
         }
         workers.append(statsTask)
 
@@ -259,7 +259,7 @@ final class DashboardViewModel {
     ) -> Task<Void, Never> {
         Task { [weak self] in
             guard let stream = try? await subscribe() else {
-                if !Task.isCancelled { await self?.notifyConnectionLost() }
+                if !Task.isCancelled { self?.notifyConnectionLost() }
                 return
             }
             for await _ in stream {
@@ -276,7 +276,7 @@ final class DashboardViewModel {
                 }
                 try? await Task.sleep(for: .milliseconds(250))
             }
-            if !Task.isCancelled { await self?.notifyConnectionLost() }
+            if !Task.isCancelled { self?.notifyConnectionLost() }
         }
     }
 
