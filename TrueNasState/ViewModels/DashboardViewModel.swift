@@ -87,12 +87,6 @@ final class DashboardViewModel {
         authState = .loggedOut(error: nil)
     }
 
-    func refresh() async {
-        async let snapshot: Void = loadSnapshot()
-        async let updateStatus: Void = loadSystemUpdateStatus()
-        _ = await (snapshot, updateStatus)
-    }
-
     func upgradeApp(_ app: TNApp) async {
         guard let client, !upgradingApps.contains(app.id) else { return }
         upgradingApps.insert(app.id)

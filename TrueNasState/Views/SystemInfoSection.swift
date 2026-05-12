@@ -4,7 +4,7 @@ struct SystemInfoSection: View {
     @Environment(DashboardViewModel.self) private var viewModel
 
     var body: some View {
-        SectionContainer(title: "System", systemImage: "info.circle") {
+        SectionContainer(title: "System", systemImage: "cpu.fill") {
             let info = viewModel.systemInfo
             let stats = viewModel.stats
             if info == nil && stats == nil {

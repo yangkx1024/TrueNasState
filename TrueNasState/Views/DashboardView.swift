@@ -106,13 +106,6 @@ struct DashboardView: View {
             }
             .buttonStyle(.bordered)
 
-            Button {
-                Task { await viewModel.refresh() }
-            } label: {
-                Label("Refresh", systemImage: "arrow.clockwise")
-            }
-            .buttonStyle(.bordered)
-
             Spacer()
 
             Button {
