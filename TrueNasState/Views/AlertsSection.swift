@@ -7,12 +7,11 @@ struct AlertsSection: View {
         SectionContainer(title: "Alerts", systemImage: "bell.badge") {
             let active = viewModel.alerts.filter { $0.isActive }
             if active.isEmpty {
-                Label {
-                    Text("No active alerts.").foregroundStyle(.secondary)
-                } icon: {
-                    Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+                HStack(spacing: 4) {
+                    Text("No active alerts.").foregroundStyle(.secondary).font(.caption)
+                    Spacer()
+                    Image(systemName: "checkmark.seal.fill").foregroundStyle(.green).font(.caption)
                 }
-                .font(.caption)
             } else {
                 Text("\(active.count) active")
                     .font(.caption2)
@@ -33,14 +32,15 @@ private struct AlertRow: View {
     let alert: TNAlert
 
     var body: some View {
-        HStack(alignment: .top, spacing: 6) {
-            Image(systemName: style.icon)
-                .foregroundStyle(style.color)
-                .font(.caption)
+        HStack(spacing: 4) {
             Text(alert.displayText)
                 .font(.caption)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
+            Spacer()
+            Image(systemName: style.icon)
+                .foregroundStyle(style.color)
+                .font(.caption)
         }
     }
 

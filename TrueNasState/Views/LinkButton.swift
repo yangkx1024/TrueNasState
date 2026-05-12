@@ -13,8 +13,32 @@ struct LinkButton: View {
             Text(label).foregroundStyle(.orange).underline()
         }
         .buttonStyle(.plain)
-        .onHover { inside in
-            if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-        }
+        .pointingHandCursor()
+    }
+}
+
+extension View {
+    func pointingHandCursor() -> some View {
+        modifier(PointingHandCursor())
+    }
+}
+
+/// Pushes `NSCursor.pointingHand` while the pointer is over the view, balancing
+/// the push on hover-exit and on view removal. Without the `isHovering` guard
+/// a stray `.onDisappear` would pop an unrelated cursor frame and shift the
+/// system cursor stack permanently.
+private struct PointingHandCursor: ViewModifier {
+    @State private var isHovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { inside in
+                guard inside != isHovering else { return }
+                isHovering = inside
+                if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+            }
+            .onDisappear {
+                if isHovering { NSCursor.pop(); isHovering = false }
+            }
     }
 }

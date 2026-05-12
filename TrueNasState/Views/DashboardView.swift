@@ -24,13 +24,18 @@ struct DashboardView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(viewModel.systemInfo?.hostname ?? viewModel.endpoint?.host ?? "TrueNAS")
-                    .font(.headline)
+                Button { openPage("/ui/dashboard") } label: {
+                    Text(viewModel.systemInfo?.hostname ?? viewModel.endpoint?.host ?? "TrueNAS")
+                        .font(.headline)
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.endpoint == nil)
+                .pointingHandCursor()
                 if let v = viewModel.systemInfo?.version {
                     HStack(spacing: 6) {
                         Text(v).foregroundStyle(.secondary)
                         if viewModel.systemUpdateAvailable {
-                            LinkButton(label: "Update available", action: openSystemUpdatePage)
+                            LinkButton(label: "Update available") { openPage("/ui/system/update") }
                         }
                     }
                     .font(.caption)
@@ -45,15 +50,22 @@ struct DashboardView: View {
         }
     }
 
-    private func openSystemUpdatePage() {
+    private func openPage(_ path: String) {
         guard let endpoint = viewModel.endpoint,
-              let url = URL(string: "/ui/system/update", relativeTo: endpoint)
+              let url = URL(string: path, relativeTo: endpoint)
         else { return }
         NSWorkspace.shared.open(url)
     }
 
     private var footer: some View {
         HStack {
+            Button {
+                viewModel.navigate(to: .settings)
+            } label: {
+                Label("Settings", systemImage: "gearshape")
+            }
+            .buttonStyle(.bordered)
+
             Button {
                 Task { await viewModel.refresh() }
             } label: {
@@ -62,13 +74,6 @@ struct DashboardView: View {
             .buttonStyle(.bordered)
 
             Spacer()
-
-            Button(role: .destructive) {
-                Task { await viewModel.logout() }
-            } label: {
-                Label("Logout", systemImage: "rectangle.portrait.and.arrow.right")
-            }
-            .buttonStyle(.bordered)
 
             Button {
                 NSApplication.shared.terminate(nil)

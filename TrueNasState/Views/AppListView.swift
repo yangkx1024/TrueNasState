@@ -11,7 +11,7 @@ struct AppListView: View {
         }
         let lastID = apps.last?.id
         VStack(alignment: .leading, spacing: 8) {
-            header
+            BackHeader(title: "Apps")
             Divider()
             if apps.isEmpty {
                 Text("No apps installed.")
@@ -40,20 +40,6 @@ struct AppListView: View {
         }
     }
 
-    private var header: some View {
-        HStack(spacing: 8) {
-            Button {
-                viewModel.navigate(to: .dashboard)
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.caption.weight(.semibold))
-            }
-            .buttonStyle(.plain)
-            Text("Apps")
-                .font(.headline)
-            Spacer()
-        }
-    }
 }
 
 private struct AppRow: View {
@@ -68,7 +54,7 @@ private struct AppRow: View {
             AppIcon(url: iconURL)
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(app.name).font(.headline)
+                  Text(app.name).font(.subheadline).bold()
                     Spacer()
                     if let state = app.state {
                         StateDot(state: state)
@@ -222,10 +208,15 @@ private struct StateDot: View {
     let state: AppState
 
     var body: some View {
-        Circle()
-            .fill(color)
-            .frame(width: 8, height: 8)
-            .accessibilityLabel(state.displayName)
+        HStack(spacing: 4) {
+            Circle()
+                .fill(color)
+                .frame(width: 4, height: 4)
+            Text(state.displayName)
+                .font(.caption2)
+                .foregroundStyle(color)
+        }
+        .accessibilityElement(children: .combine)
     }
 
     private var color: Color {

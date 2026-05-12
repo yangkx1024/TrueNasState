@@ -18,7 +18,7 @@ final class DashboardViewModel {
     private(set) var screen: Screen = .dashboard
     private(set) var endpoint: URL?
 
-    enum Screen: Equatable { case dashboard, appList }
+    enum Screen: Equatable { case dashboard, appList, settings }
 
     private let credentials = CredentialStore.shared
     private var client: TrueNASClient?
@@ -37,7 +37,7 @@ final class DashboardViewModel {
         self.screen = screen
         switch screen {
         case .appList: startAppStatsSubscription()
-        case .dashboard: stopAppStatsSubscription()
+        case .dashboard, .settings: stopAppStatsSubscription()
         }
     }
 
@@ -198,22 +198,45 @@ final class DashboardViewModel {
         }
         workers.append(statsTask)
 
-        let alertsTask = Task { [weak self] in
-            guard let stream = try? await client.subscribeAlerts() else { return }
+        workers.append(refetchOnEvent(
+            subscribe: { try await client.subscribeAlerts() },
+            fetch: { try await client.fetchAlerts() },
+            keyPath: \.alerts
+        ))
+
+        workers.append(refetchOnEvent(
+            subscribe: { try await client.subscribeApps() },
+            fetch: { try await client.fetchApps() },
+            keyPath: \.apps
+        ))
+    }
+
+    /// Subscribes to a TrueNAS collection event and re-fetches via `fetch` on each
+    /// frame. The trailing sleep throttles bursts (e.g. an upgrade-all transitions
+    /// every app through DEPLOYING → RUNNING in quick succession) so the loop
+    /// caps at ~4 fetches/sec instead of one fetch per delta event.
+    private func refetchOnEvent<T: Equatable>(
+        subscribe: @escaping () async throws -> AsyncStream<JSONValue>,
+        fetch: @escaping () async throws -> T,
+        keyPath: ReferenceWritableKeyPath<DashboardViewModel, T>
+    ) -> Task<Void, Never> {
+        Task { [weak self] in
+            guard let stream = try? await subscribe() else { return }
             for await _ in stream {
                 if Task.isCancelled { return }
-                if let updated = try? await client.fetchAlerts() {
+                if let updated = try? await fetch() {
+                    if Task.isCancelled { return }
                     await MainActor.run {
                         guard let self else { return }
-                        if updated != self.alerts {
-                            self.alerts = updated
+                        if updated != self[keyPath: keyPath] {
+                            self[keyPath: keyPath] = updated
                             self.lastUpdated = Date()
                         }
                     }
                 }
+                try? await Task.sleep(for: .milliseconds(250))
             }
         }
-        workers.append(alertsTask)
     }
 
     private func stop() async {

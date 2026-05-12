@@ -10,6 +10,7 @@ struct RootMenuView: View {
                 switch viewModel.screen {
                 case .dashboard: DashboardView()
                 case .appList:   AppListView()
+                case .settings:  SettingsView()
                 }
             case .connecting:
                 ConnectingView()

@@ -79,6 +79,11 @@ extension TrueNASClient {
         try await subscribe(event: "alert.list")
     }
 
+    /// TrueNAS only emits a delta payload per event; consumers re-fetch via `app.query`.
+    func subscribeApps() async throws -> AsyncStream<JSONValue> {
+        try await subscribe(event: "app.query")
+    }
+
     /// `app.stats` is published as a stream once subscribed (2 s default interval).
     func subscribeAppStats() async throws -> AsyncStream<[AppLiveStat]> {
         let raw = try await subscribe(event: "app.stats")
