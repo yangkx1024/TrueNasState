@@ -53,11 +53,11 @@ final class DashboardViewModel {
 
     func login(endpointString: String, apiKey: String) async {
         guard let url = Self.normalizeEndpoint(endpointString) else {
-            authState = .loggedOut(error: "Endpoint must be a valid https:// URL.")
+            authState = .loggedOut(error: String(localized: "Endpoint must be a valid https:// URL."))
             return
         }
         if url.scheme?.lowercased() != "https" {
-            authState = .loggedOut(error: "Only https:// endpoints are supported.")
+            authState = .loggedOut(error: String(localized: "Only https:// endpoints are supported."))
             return
         }
         await connect(endpoint: url, apiKey: apiKey, persistOnSuccess: true)

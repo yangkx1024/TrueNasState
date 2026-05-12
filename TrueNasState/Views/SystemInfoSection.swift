@@ -30,7 +30,7 @@ struct SystemInfoSection: View {
 }
 
 struct Row: View {
-    let label: String
+    let label: LocalizedStringKey
     let value: String
 
     var body: some View {
@@ -44,7 +44,7 @@ struct Row: View {
 }
 
 struct SectionContainer<Content: View>: View {
-    let title: String
+    let title: LocalizedStringKey
     let systemImage: String
     var onTap: (() -> Void)? = nil
     @ViewBuilder var content: () -> Content

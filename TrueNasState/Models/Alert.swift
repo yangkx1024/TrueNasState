@@ -61,6 +61,6 @@ struct TNAlert: Decodable, Identifiable, Equatable {
         return nil
     }
 
-    var displayText: String { formatted ?? text ?? "(no description)" }
+    var displayText: String { formatted ?? text ?? String(localized: "(no description)") }
     var isActive: Bool { dismissed != true }
 }

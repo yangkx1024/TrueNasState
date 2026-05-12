@@ -32,7 +32,7 @@ private struct PoolRow: View {
                     Text("(\(line))").font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text(pool.displayStatus)
+                Text(pool.localizedStatus)
                     .font(.caption2)
                     .foregroundStyle(pool.isHealthy ? Color.secondary : Color.red)
             }

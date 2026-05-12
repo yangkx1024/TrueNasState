@@ -12,17 +12,24 @@ enum TrueNASClientError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidEndpoint: return "Endpoint must be a valid http:// or https:// URL."
-        case .notConnected: return "Not connected to TrueNAS."
-        case .unexpectedMessage: return "Received an unexpected message from TrueNAS."
-        case .authenticationFailed(let m): return "Authentication failed: \(m)"
-        case .decodingFailed(let e): return "Response could not be parsed: \(e.localizedDescription)"
-        case .rpcFailed(let e): return e.errorDescription
-        case .transport(let e): return "Connection error: \(e.localizedDescription)"
+        case .invalidEndpoint:
+            return String(localized: "Endpoint must be a valid http:// or https:// URL.")
+        case .notConnected:
+            return String(localized: "Not connected to TrueNAS.")
+        case .unexpectedMessage:
+            return String(localized: "Received an unexpected message from TrueNAS.")
+        case .authenticationFailed(let m):
+            return String(localized: "Authentication failed: \(m)")
+        case .decodingFailed(let e):
+            return String(localized: "Response could not be parsed: \(e.localizedDescription)")
+        case .rpcFailed(let e):
+            return e.errorDescription
+        case .transport(let e):
+            return String(localized: "Connection error: \(e.localizedDescription)")
         case .serverClosed(let code, let reason):
             return reason.isEmpty
-                ? "Server closed the WebSocket (code \(code))."
-                : "Server closed the WebSocket: \(reason) (code \(code))."
+                ? String(localized: "Server closed the WebSocket (code \(code)).")
+                : String(localized: "Server closed the WebSocket: \(reason) (code \(code)).")
         }
     }
 }
