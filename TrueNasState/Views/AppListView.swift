@@ -27,7 +27,10 @@ struct AppListView: View {
                                 stat: viewModel.appStats[app.id],
                                 iconURL: viewModel.appIcons[app.catalogName ?? app.name],
                                 isUpgrading: viewModel.upgradingApps.contains(app.id),
-                                onUpgrade: { Task { await viewModel.upgradeApp(app) } }
+                                isToggling: viewModel.togglingApps.contains(app.id),
+                                onUpgrade: { Task { await viewModel.upgradeApp(app) } },
+                                onStart: { Task { await viewModel.startApp(app) } },
+                                onStop: { Task { await viewModel.stopApp(app) } }
                             )
                             if app.id != lastID {
                                 Divider()
@@ -47,7 +50,10 @@ private struct AppRow: View {
     let stat: AppLiveStat?
     let iconURL: URL?
     let isUpgrading: Bool
+    let isToggling: Bool
     let onUpgrade: () -> Void
+    let onStart: () -> Void
+    let onStop: () -> Void
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
@@ -63,7 +69,8 @@ private struct AppRow: View {
                     }
                     Spacer()
                     if let state = app.state {
-                        StateDot(state: state)
+                        AppStateControl(state: state, isToggling: isToggling,
+                                        onStart: onStart, onStop: onStop)
                     }
                 }
                 HStack(spacing: 12) {
@@ -81,7 +88,7 @@ private struct AppRow: View {
 
     @ViewBuilder
     private var upgradeIndicator: some View {
-        if isUpgrading || app.state == .deploying {
+        if isUpgrading {
             HStack(spacing: 4) {
                 ProgressView().controlSize(.mini)
                 Text("Updating…").foregroundStyle(.orange)
@@ -210,19 +217,48 @@ private final class SVGWebViewDelegate: NSObject, WKNavigationDelegate {
     }
 }
 
-private struct StateDot: View {
+private struct AppStateControl: View {
     let state: AppState
+    let isToggling: Bool
+    let onStart: () -> Void
+    let onStop: () -> Void
 
     var body: some View {
         HStack(spacing: 4) {
-            Circle()
-                .fill(color)
-                .frame(width: 4, height: 4)
             Text(state.displayName)
                 .font(.caption2)
                 .foregroundStyle(color)
+            iconSlot
         }
         .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private var iconSlot: some View {
+        // .deploying/.stopping covers the full transition window; isToggling
+        // covers the gap between click and TrueNAS reporting the new state.
+        if isToggling || state == .deploying || state == .stopping {
+            ProgressView().controlSize(.mini)
+        } else if state == .running {
+            iconButton(systemImage: "stop.circle.fill",
+                       label: String(localized: "Stop app"),
+                       action: onStop)
+        } else {
+            iconButton(systemImage: "play.circle.fill",
+                       label: String(localized: "Start app"),
+                       action: onStart)
+        }
+    }
+
+    private func iconButton(systemImage: String, label: String,
+                            action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.caption.weight(.semibold))
+        }
+        .buttonStyle(.plain)
+        .pointingHandCursor()
+        .accessibilityLabel(label)
     }
 
     private var color: Color {

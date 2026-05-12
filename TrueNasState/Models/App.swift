@@ -12,7 +12,7 @@ struct TNApp: Decodable, Identifiable, Equatable {
     let id: String
     let name: String
     let version: String?
-    let state: AppState?
+    var state: AppState?
     let upgradeAvailable: Bool?
     /// Upstream catalog app name (e.g. "plex"), used to look up icons in `catalog.apps`.
     /// May differ from `name`/`id`, which are the user-chosen instance slug.

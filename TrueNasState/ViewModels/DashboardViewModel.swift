@@ -13,6 +13,7 @@ final class DashboardViewModel {
     var appStats: [String: AppLiveStat] = [:]
     var appIcons: [String: URL] = [:]
     var upgradingApps: Set<String> = []
+    var togglingApps: Set<String> = []
     private var jobIDToAppID: [Int: String] = [:]
     var systemUpdateAvailable = false
     var lastUpdated: Date?
@@ -103,6 +104,41 @@ final class DashboardViewModel {
         } catch {
             upgradingApps.remove(app.id)
             print("[upgrade] \(app.id) failed: \(error.localizedDescription)")
+        }
+    }
+
+    func startApp(_ app: TNApp) async { await toggleApp(app, action: .start) }
+    func stopApp(_ app: TNApp)  async { await toggleApp(app, action: .stop) }
+
+    private enum AppToggleAction { case start, stop }
+
+    private func toggleApp(_ app: TNApp, action: AppToggleAction) async {
+        guard !togglingApps.contains(app.id) else { return }
+        guard let idx = apps.firstIndex(where: { $0.id == app.id }) else { return }
+        guard let client else {
+            // Demo mode: flip the row locally so reviewers see the buttons working.
+            apps[idx].state = (action == .start) ? .running : .stopped
+            return
+        }
+        let originalState = apps[idx].state
+        togglingApps.insert(app.id)
+        // Surface STOPPING / DEPLOYING immediately — TrueNAS sometimes jumps
+        // straight to the terminal state on fast operations and never publishes
+        // the transitional snapshot.
+        apps[idx].state = (action == .start) ? .deploying : .stopping
+        do {
+            let jobID: Int
+            switch action {
+            case .start: jobID = try await client.startApp(name: app.id)
+            case .stop:  jobID = try await client.stopApp(name: app.id)
+            }
+            jobIDToAppID[jobID] = app.id
+        } catch {
+            togglingApps.remove(app.id)
+            if let idx = apps.firstIndex(where: { $0.id == app.id }) {
+                apps[idx].state = originalState
+            }
+            print("[toggle] \(app.id) failed: \(error.localizedDescription)")
         }
     }
 
@@ -207,6 +243,25 @@ final class DashboardViewModel {
         lastUpdated = Date()
     }
 
+    /// Fetches `app.query` and assigns, keeping the optimistic transitional
+    /// state for any app currently in `togglingApps` (TrueNAS may briefly
+    /// echo the pre-action state before the job terminates).
+    private func refreshApps() async {
+        guard let client, let updated = try? await client.fetchApps() else { return }
+        let merged: [TNApp] = updated.map { fetched in
+            guard togglingApps.contains(fetched.id),
+                  let existing = apps.first(where: { $0.id == fetched.id })
+            else { return fetched }
+            var copy = fetched
+            copy.state = existing.state
+            return copy
+        }
+        if merged != apps {
+            apps = merged
+            lastUpdated = Date()
+        }
+    }
+
     private func startPeriodicRefresh() {
         let task = Task { [weak self] in
             while !Task.isCancelled {
@@ -252,11 +307,19 @@ final class DashboardViewModel {
             keyPath: \.alerts
         ))
 
-        workers.append(refetchOnEvent(
-            subscribe: { try await client.subscribeApps() },
-            fetch: { try await client.fetchApps() },
-            keyPath: \.apps
-        ))
+        let appsTask = Task { [weak self] in
+            guard let stream = try? await client.subscribeApps() else {
+                if !Task.isCancelled { self?.notifyConnectionLost() }
+                return
+            }
+            for await _ in stream {
+                if Task.isCancelled { return }
+                await self?.refreshApps()
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            if !Task.isCancelled { self?.notifyConnectionLost() }
+        }
+        workers.append(appsTask)
 
         let jobsTask = Task { [weak self] in
             guard let stream = try? await client.subscribeJobs() else { return }
@@ -267,7 +330,12 @@ final class DashboardViewModel {
                     guard let appID = self.jobIDToAppID[job.id] else { return }
                     if job.isTerminal {
                         self.upgradingApps.remove(appID)
+                        self.togglingApps.remove(appID)
                         self.jobIDToAppID.removeValue(forKey: job.id)
+                        // togglingApps just cleared, so a fresh fetchApps is no
+                        // longer filtered by the merge step. Cover the case where
+                        // the state didn't change (no app.query event will fire).
+                        Task { [weak self] in await self?.refreshApps() }
                     }
                 }
             }
@@ -313,6 +381,7 @@ final class DashboardViewModel {
         // Clear here so a reconnect can't leak stale job→app bindings whose
         // terminal events were swallowed by the dropped subscription.
         upgradingApps = []
+        togglingApps = []
         jobIDToAppID = [:]
         stopAppStatsSubscription()
         demoTickerTask?.cancel()

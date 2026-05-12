@@ -30,7 +30,21 @@ extension TrueNASClient {
     /// runs asynchronously and completion is reported via `subscribeJobs()`.
     @discardableResult
     func upgradeApp(name: String) async throws -> Int {
-        let raw = try await callRaw(method: "app.upgrade", params: [name])
+        try await appJobCall(method: "app.upgrade", name: name)
+    }
+
+    @discardableResult
+    func startApp(name: String) async throws -> Int {
+        try await appJobCall(method: "app.start", name: name)
+    }
+
+    @discardableResult
+    func stopApp(name: String) async throws -> Int {
+        try await appJobCall(method: "app.stop", name: name)
+    }
+
+    private func appJobCall(method: String, name: String) async throws -> Int {
+        let raw = try await callRaw(method: method, params: [name])
         guard let jobID = raw.intValue else {
             throw TrueNASClientError.unexpectedMessage
         }
