@@ -6,6 +6,13 @@ struct DashboardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if viewModel.authState == .reconnecting {
+                ReconnectingBanner(
+                    host: viewModel.endpoint?.host,
+                    lastUpdated: viewModel.lastUpdated
+                )
+            }
+
             header
 
             Divider()
@@ -42,11 +49,44 @@ struct DashboardView: View {
                 }
             }
             Spacer()
-            if let last = viewModel.lastUpdated {
-                Text(last, format: .dateTime.hour().minute().second())
+            LastUpdatedText(date: viewModel.lastUpdated)
+        }
+    }
+
+    private struct LastUpdatedText: View {
+        let date: Date?
+        var body: some View {
+            if let date {
+                Text(date, format: .dateTime.hour().minute().second())
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
+        }
+    }
+
+    private struct ReconnectingBanner: View {
+        let host: String?
+        let lastUpdated: Date?
+
+        var body: some View {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.mini)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Reconnecting…")
+                        .font(.caption).fontWeight(.medium)
+                    if let host {
+                        Text(host)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                LastUpdatedText(date: lastUpdated)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(.yellow.opacity(0.15))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
         }
     }
 

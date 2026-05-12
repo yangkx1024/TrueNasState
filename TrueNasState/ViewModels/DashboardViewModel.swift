@@ -25,6 +25,7 @@ final class DashboardViewModel {
     private var workers: [Task<Void, Never>] = []
     private var appStatsTask: Task<Void, Never>?
     private var didBootstrap = false
+    private var reconnectController: ReconnectController?
 
     init() {
         // The menu-bar popover is rebuilt on every click, so .task would re-fire login.
@@ -48,7 +49,9 @@ final class DashboardViewModel {
             authState = .loggedOut(error: nil)
             return
         }
-        await connect(endpoint: saved.endpoint, apiKey: saved.apiKey, persistOnSuccess: false)
+        authState = .connecting
+        endpoint = saved.endpoint
+        startReconnectController(credentials: saved)
     }
 
     func login(endpointString: String, apiKey: String) async {
@@ -64,6 +67,8 @@ final class DashboardViewModel {
     }
 
     func logout() async {
+        reconnectController?.stop()
+        reconnectController = nil
         await stop()
         credentials.clear()
         systemInfo = nil
@@ -103,26 +108,31 @@ final class DashboardViewModel {
     // MARK: - Internals
 
     private func connect(endpoint: URL, apiKey: String, persistOnSuccess: Bool) async {
-        await stop()
         authState = .connecting
-
-        let client: TrueNASClient
         do {
-            client = try TrueNASClient(endpoint: endpoint, apiKey: apiKey)
-            try await client.connect()
+            try await connectOnce(endpoint: endpoint, apiKey: apiKey)
         } catch {
             self.client = nil
             authState = .loggedOut(error: error.localizedDescription)
             return
         }
+        let creds = Credentials(endpoint: endpoint, apiKey: apiKey)
+        if persistOnSuccess {
+            try? credentials.save(creds)
+        }
+        startReconnectController(credentials: creds)
+    }
+
+    /// Raw connect — throws on any failure so the reconnect controller can
+    /// classify the error. Owns the post-connect data load and subscriptions.
+    private func connectOnce(endpoint: URL, apiKey: String) async throws {
+        await stop()
+        let client = try TrueNASClient(endpoint: endpoint, apiKey: apiKey)
+        try await client.connect()
 
         self.client = client
         self.endpoint = endpoint
         authState = .loggedIn
-
-        if persistOnSuccess {
-            try? credentials.save(Credentials(endpoint: endpoint, apiKey: apiKey))
-        }
 
         async let snapshot: Void = loadSnapshot()
         async let icons: Void = loadCatalogIcons()
@@ -130,6 +140,35 @@ final class DashboardViewModel {
         _ = await (snapshot, icons, updateStatus)
         startSubscriptions()
         startPeriodicRefresh()
+    }
+
+    private func startReconnectController(credentials creds: Credentials) {
+        reconnectController?.stop()
+        let controller = ReconnectController()
+        controller.attemptConnect = { [weak self] in
+            try await self?.connectOnce(endpoint: creds.endpoint, apiKey: creds.apiKey)
+        }
+        controller.onEvent = { [weak self] event in
+            guard let self else { return }
+            switch event {
+            case .willEnterReconnecting:
+                if authState == .connecting { authState = .reconnecting }
+            case .authFailure(let error):
+                credentials.clear()
+                client = nil
+                authState = .loggedOut(error: error.localizedDescription)
+                reconnectController?.stop()
+                reconnectController = nil
+            }
+        }
+        reconnectController = controller
+        controller.start()
+    }
+
+    private func notifyConnectionLost() {
+        guard authState == .loggedIn else { return }
+        authState = .reconnecting
+        reconnectController?.resetAndRetryNow()
     }
 
     private func loadCatalogIcons() async {
@@ -178,7 +217,10 @@ final class DashboardViewModel {
         guard let client else { return }
 
         let statsTask = Task { [weak self] in
-            guard let stream = try? await client.subscribeRealtime() else { return }
+            guard let stream = try? await client.subscribeRealtime() else {
+                if !Task.isCancelled { await self?.notifyConnectionLost() }
+                return
+            }
             for await snapshot in stream {
                 if Task.isCancelled { return }
                 await MainActor.run {
@@ -195,6 +237,7 @@ final class DashboardViewModel {
                     }
                 }
             }
+            if !Task.isCancelled { await self?.notifyConnectionLost() }
         }
         workers.append(statsTask)
 
@@ -221,7 +264,10 @@ final class DashboardViewModel {
         keyPath: ReferenceWritableKeyPath<DashboardViewModel, T>
     ) -> Task<Void, Never> {
         Task { [weak self] in
-            guard let stream = try? await subscribe() else { return }
+            guard let stream = try? await subscribe() else {
+                if !Task.isCancelled { await self?.notifyConnectionLost() }
+                return
+            }
             for await _ in stream {
                 if Task.isCancelled { return }
                 if let updated = try? await fetch() {
@@ -236,6 +282,7 @@ final class DashboardViewModel {
                 }
                 try? await Task.sleep(for: .milliseconds(250))
             }
+            if !Task.isCancelled { await self?.notifyConnectionLost() }
         }
     }
 
