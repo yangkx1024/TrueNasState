@@ -17,7 +17,7 @@ A lightweight macOS menu-bar app for monitoring a TrueNAS SCALE server. It lives
 
 ## Building
 
-Open `TrueNasState.xcodeproj` in Xcode and run the `TrueNasState` scheme. The project uses automatic code signing and the hardened runtime; signing requires a local development team.
+Open `TrueNasState.xcodeproj` in Xcode and run the `TrueStats` scheme. The project uses automatic code signing and the hardened runtime; signing requires a local development team.
 
 The app is a status-bar agent — there is no Dock icon and no main window. After launching, look for the drive icon in the menu bar.
 
@@ -41,15 +41,15 @@ If your TrueNAS server uses a self-signed certificate, the WebSocket connection 
    - Or copy `/etc/certificates/<cert-name>.crt` from the TrueNAS host directly.
 2. Open **Keychain Access**, select the **login** keychain, and drag the `.crt` file into it.
 3. Double-click the imported certificate, expand **Trust**, and set **When using this certificate** to **Always Trust**. Close the window and authenticate to save.
-4. Quit and relaunch TrueNasState, then sign in again.
+4. Quit and relaunch TrueStats, then sign in again.
 
 If TrueNAS is reachable only by IP or a `.local` hostname that doesn't match the certificate's Common Name / SAN, regenerate the certificate in TrueNAS (**System → Certificates**) with the hostname or IP you actually use before importing it.
 
 ## Project layout
 
 ```
-TrueNasState/
-├── TrueNasStateApp.swift     # @main, wires in AppDelegate
+TrueStats/
+├── TrueStatsApp.swift        # @main, wires in AppDelegate
 ├── AppDelegate.swift         # NSStatusItem + NSPopover, status-bar badge
 ├── Auth/                     # Keychain credential store, auth state, login item
 ├── Networking/               # JSON-RPC WebSocket client, typed API methods, reconnect
