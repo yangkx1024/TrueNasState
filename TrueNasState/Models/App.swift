@@ -11,6 +11,7 @@ enum AppState: String, Decodable, Equatable {
 struct TNApp: Decodable, Identifiable, Equatable {
     let id: String
     let name: String
+    let version: String?
     let state: AppState?
     let upgradeAvailable: Bool?
     /// Upstream catalog app name (e.g. "plex"), used to look up icons in `catalog.apps`.
@@ -24,6 +25,7 @@ struct TNApp: Decodable, Identifiable, Equatable {
 
     private enum MetadataKeys: String, CodingKey {
         case name
+        case appVersion = "app_version"
     }
 
     init(from decoder: Decoder) throws {
@@ -34,6 +36,7 @@ struct TNApp: Decodable, Identifiable, Equatable {
         self.upgradeAvailable = try? c.decode(Bool.self, forKey: .upgradeAvailable)
         let metadata = try? c.nestedContainer(keyedBy: MetadataKeys.self, forKey: .metadata)
         self.catalogName = try? metadata?.decode(String.self, forKey: .name)
+        self.version = try? metadata?.decode(String.self, forKey: .appVersion)
     }
 
     var isRunning: Bool { state == .running }

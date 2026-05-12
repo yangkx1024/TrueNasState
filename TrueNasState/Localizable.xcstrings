@@ -157,9 +157,6 @@
         }
       }
     },
-    "%lld" : {
-
-    },
     "%lld (%lld running)" : {
       "comment" : "Apps section: total count (running count running)",
       "localizations" : {
@@ -1804,47 +1801,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Server closed the WebSocket: %1$@ (code %2$lld)."
-          }
-        }
-      }
-    },
-    "Server closed the WebSocket: %1$@ (code %2$lld)." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Server hat den WebSocket geschlossen: %1$@ (Code %2$lld)."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El servidor cerró el WebSocket: %1$@ (código %2$lld)."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Le serveur a fermé le WebSocket : %1$@ (code %2$lld)."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "サーバーが WebSocket を閉じました: %1$@ (コード %2$lld)。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "服务器关闭了 WebSocket：%1$@（代码 %2$lld）。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "伺服器關閉了 WebSocket：%1$@（代碼 %2$lld）。"
           }
         }
       }

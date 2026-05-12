@@ -53,8 +53,14 @@ private struct AppRow: View {
         HStack(alignment: .center, spacing: 10) {
             AppIcon(url: iconURL)
             VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                  Text(app.name).font(.subheadline).bold()
+                HStack(spacing: 6) {
+                    Text(app.name).font(.headline).lineLimit(1)
+                    if let version = app.version {
+                        Text(version)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                     Spacer()
                     if let state = app.state {
                         StateDot(state: state)
