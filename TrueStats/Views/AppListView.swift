@@ -90,13 +90,26 @@ private struct AppRow: View {
     private var upgradeIndicator: some View {
         if isUpgrading {
             HStack(spacing: 4) {
+                Text("Updating…")
                 ProgressView().controlSize(.mini)
-                Text("Updating…").foregroundStyle(.orange)
             }
+            .foregroundStyle(.orange)
         } else if app.hasUpgrade {
-            LinkButton(label: "Update", action: onUpgrade)
+            HStack(spacing: 4) {
+                Text("Update")
+                appRowIconButton(systemImage: "arrow.triangle.2.circlepath",
+                                 label: String(localized: "Update app"),
+                                 action: onUpgrade)
+            }
+            .foregroundStyle(.orange)
+            .accessibilityElement(children: .combine)
         } else {
-            Text("Up to date").foregroundStyle(.green)
+            HStack(spacing: 4) {
+                Text("Up to date")
+                Image(systemName: "checkmark")
+                    .font(.caption.weight(.semibold))
+            }
+            .foregroundStyle(.green)
         }
     }
 }
@@ -240,25 +253,14 @@ private struct AppStateControl: View {
         if isToggling || state == .deploying || state == .stopping {
             ProgressView().controlSize(.mini)
         } else if state == .running {
-            iconButton(systemImage: "stop.circle.fill",
-                       label: String(localized: "Stop app"),
-                       action: onStop)
+            appRowIconButton(systemImage: "stop.circle.fill",
+                             label: String(localized: "Stop app"),
+                             action: onStop)
         } else {
-            iconButton(systemImage: "play.circle.fill",
-                       label: String(localized: "Start app"),
-                       action: onStart)
+            appRowIconButton(systemImage: "play.circle.fill",
+                             label: String(localized: "Start app"),
+                             action: onStart)
         }
-    }
-
-    private func iconButton(systemImage: String, label: String,
-                            action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.caption.weight(.semibold))
-        }
-        .buttonStyle(.plain)
-        .pointingHandCursor()
-        .accessibilityLabel(label)
     }
 
     private var color: Color {
@@ -269,6 +271,17 @@ private struct AppStateControl: View {
         case .stopped: return .secondary
         }
     }
+}
+
+private func appRowIconButton(systemImage: String, label: String,
+                              action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+        Image(systemName: systemImage)
+            .font(.caption.weight(.semibold))
+    }
+    .buttonStyle(.plain)
+    .pointingHandCursor()
+    .accessibilityLabel(label)
 }
 
 private struct OverlayScrollView<Content: View>: NSViewRepresentable {
