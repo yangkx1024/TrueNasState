@@ -26,8 +26,8 @@ struct AppListView: View {
                                 app: app,
                                 stat: viewModel.appStats[app.id],
                                 iconURL: viewModel.appIcons[app.catalogName ?? app.name],
-                                isUpgrading: viewModel.upgradingApps.contains(app.id),
-                                isToggling: viewModel.togglingApps.contains(app.id),
+                                isUpgrading: viewModel.isUpgrading(app.id),
+                                isToggling: viewModel.isToggling(app.id),
                                 onUpgrade: { Task { await viewModel.upgradeApp(app) } },
                                 onStart: { Task { await viewModel.startApp(app) } },
                                 onStop: { Task { await viewModel.stopApp(app) } }
@@ -41,8 +41,12 @@ struct AppListView: View {
                 }
             }
         }
+        // Tied to the screen being visible, so the subscription starts and stops with
+        // the view. Keyed on authState so a reconnect re-establishes it.
+        .task(id: viewModel.authState) {
+            await viewModel.streamAppStats()
+        }
     }
-
 }
 
 private struct AppRow: View {

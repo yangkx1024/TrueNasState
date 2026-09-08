@@ -133,14 +133,6 @@
 		};
 /* End PBXNativeTarget section */
 
-/* Begin PBXTargetDependency section */
-		B4000050000000000000000D /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = B3000010000000000000000D /* TrueStats */;
-			targetProxy = B4000051000000000000000D /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
-
 /* Begin PBXProject section */
 		B3000001000000000000000A /* Project object */ = {
 			isa = PBXProject;
@@ -149,12 +141,12 @@
 				LastSwiftUpdateCheck = 2640;
 				LastUpgradeCheck = 2660;
 				TargetAttributes = {
+					B3000010000000000000000D = {
+						CreatedOnToolsVersion = 26.4.1;
+					};
 					B4000010000000000000000D = {
 						CreatedOnToolsVersion = 26.6;
 						TestTargetID = B3000010000000000000000D;
-					};
-					B3000010000000000000000D = {
-						CreatedOnToolsVersion = 26.4.1;
 					};
 				};
 			};
@@ -219,6 +211,14 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		B4000050000000000000000D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B3000010000000000000000D /* TrueStats */;
+			targetProxy = B4000051000000000000000D /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		B3000031000000000000000E /* Debug */ = {

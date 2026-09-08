@@ -131,3 +131,52 @@ struct JSONValueTests {
         #expect(try jsonValue("null").stringValue == nil)
     }
 }
+
+@Suite("Keychain account scoping")
+struct CredentialAccountTests {
+    @Test("distinguishes two instances on the same host by port")
+    func portParticipates() throws {
+        let plain = CredentialStore.account(for: try #require(URL(string: "https://nas.local")))
+        let ported = CredentialStore.account(for: try #require(URL(string: "https://nas.local:8443")))
+        #expect(plain != ported)
+    }
+
+    @Test("distinguishes schemes")
+    func schemeParticipates() throws {
+        #expect(CredentialStore.account(for: try #require(URL(string: "https://nas.local")))
+                != CredentialStore.account(for: try #require(URL(string: "http://nas.local"))))
+    }
+
+    @Test("ignores path, query and fragment so one server keeps one account")
+    func ignoresPathAndQuery() throws {
+        let bare = CredentialStore.account(for: try #require(URL(string: "https://nas.local")))
+        let noisy = CredentialStore.account(for: try #require(URL(string: "https://nas.local/ui?a=1#b")))
+        #expect(bare == noisy)
+    }
+
+    @Test("no longer collapses to the bare host the way old builds did")
+    func differsFromLegacyAccount() throws {
+        let endpoint = try #require(URL(string: "https://nas.local"))
+        #expect(CredentialStore.account(for: endpoint) != endpoint.host)
+    }
+}
+
+@Suite("icon cache file naming")
+struct AppIconCacheTests {
+    @Test("leaves an ordinary hostname alone")
+    func passesThroughPlainHosts() {
+        #expect(AppIconCache.sanitized("nas.local") == "nas.local")
+        #expect(AppIconCache.sanitized("my-nas_01.example.com") == "my-nas_01.example.com")
+    }
+
+    @Test("replaces characters that don't belong in a path component")
+    func replacesPathSeparators() {
+        #expect(AppIconCache.sanitized("nas/../etc") == "nas_.._etc")
+        #expect(!AppIconCache.sanitized("a:b/c").contains("/"))
+    }
+
+    @Test("keeps different hosts on different files")
+    func distinctHostsStayDistinct() {
+        #expect(AppIconCache.sanitized("a.local") != AppIconCache.sanitized("b.local"))
+    }
+}

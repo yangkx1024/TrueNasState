@@ -36,27 +36,56 @@ final class CredentialStore: @unchecked Sendable {
         self.defaults = defaults
     }
 
+    /// Keychain account for an endpoint. Scheme, host *and port* all take part, so two
+    /// TrueNAS instances behind one hostname on different ports no longer overwrite
+    /// each other's key — earlier versions keyed on the bare host alone.
+    static func account(for endpoint: URL) -> String {
+        guard var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false) else {
+            return endpoint.absoluteString
+        }
+        components.stripPathQueryAndFragment()
+        components.user = nil
+        components.password = nil
+        return components.url?.absoluteString ?? endpoint.absoluteString
+    }
+
     func save(_ credentials: Credentials) throws {
+        // Pointing the app at a different server used to strand the previous key in
+        // the Keychain permanently, since `clear()` only ever saw the current one.
+        if let previous = storedEndpoint(), previous != credentials.endpoint {
+            deleteKeys(for: previous)
+        }
         defaults.set(credentials.endpoint.absoluteString, forKey: endpointDefaultsKey)
-        try writeKey(credentials.apiKey, account: credentials.endpoint.host ?? credentials.endpoint.absoluteString)
+        try writeKey(credentials.apiKey, account: Self.account(for: credentials.endpoint))
     }
 
     func load() -> Credentials? {
-        guard let urlString = defaults.string(forKey: endpointDefaultsKey),
-              let url = URL(string: urlString),
-              let account = url.host else {
-            return nil
+        guard let endpoint = storedEndpoint() else { return nil }
+        if let key = readKey(account: Self.account(for: endpoint)) {
+            return Credentials(endpoint: endpoint, apiKey: key)
         }
-        guard let key = readKey(account: account) else { return nil }
-        return Credentials(endpoint: url, apiKey: key)
+        // Adopt a key written by a version that used the bare host as the account, so
+        // upgrading doesn't silently sign the user out.
+        guard let host = endpoint.host, let legacy = readKey(account: host) else { return nil }
+        try? writeKey(legacy, account: Self.account(for: endpoint))
+        deleteKey(account: host)
+        return Credentials(endpoint: endpoint, apiKey: legacy)
     }
 
     func clear() {
-        if let urlString = defaults.string(forKey: endpointDefaultsKey),
-           let host = URL(string: urlString)?.host {
-            deleteKey(account: host)
+        if let endpoint = storedEndpoint() {
+            deleteKeys(for: endpoint)
         }
         defaults.removeObject(forKey: endpointDefaultsKey)
+    }
+
+    private func storedEndpoint() -> URL? {
+        defaults.string(forKey: endpointDefaultsKey).flatMap(URL.init(string:))
+    }
+
+    private func deleteKeys(for endpoint: URL) {
+        deleteKey(account: Self.account(for: endpoint))
+        if let host = endpoint.host { deleteKey(account: host) }
     }
 
     // MARK: - Keychain

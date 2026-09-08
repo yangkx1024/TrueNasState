@@ -32,11 +32,18 @@ private struct AlertRow: View {
     let alert: TNAlert
 
     var body: some View {
-        HStack(spacing: 4) {
-            Text(alert.displayText)
-                .font(.caption)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
+        HStack(alignment: .top, spacing: 4) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(alert.displayText)
+                    .font(.caption)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let datetime = alert.datetime {
+                    Text(datetime, format: .relative(presentation: .numeric))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
             Spacer()
             Image(systemName: style.icon)
                 .foregroundStyle(style.color)

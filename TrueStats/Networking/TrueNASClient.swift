@@ -47,10 +47,19 @@ actor TrueNASClient {
     private var task: URLSessionWebSocketTask?
     private var receiveLoop: Task<Void, Never>?
     private var nextId: Int = 1
-    private var pending: [Int: CheckedContinuation<JSONValue, Error>] = [:]
+    private var pending: [Int: PendingCall] = [:]
     private var subscribers: [String: [UUID: AsyncStream<JSONValue>.Continuation]] = [:]
     private var openContinuation: CheckedContinuation<Void, Error>?
     private var isOpen = false
+
+    /// A request waiting on its response frame. `deliver` is handed the raw frame so
+    /// the original caller decodes straight into the type it asked for; the previous
+    /// design built a `JSONValue` tree for every payload, converted it back to
+    /// Foundation objects, re-serialized those and decoded a second time.
+    private struct PendingCall {
+        let deliver: (Data) -> Void
+        let fail: (Error) -> Void
+    }
 
     init(endpoint: URL, apiKey: String) throws {
         self.endpoint = endpoint
@@ -95,16 +104,28 @@ actor TrueNASClient {
     // MARK: - Public API
 
     func call<T: Decodable>(_ method: String, params: [Any] = [], as type: T.Type = T.self) async throws -> T {
-        let raw = try await callRaw(method: method, params: params)
-        do {
-            let data = try JSONSerialization.data(withJSONObject: raw.asAny())
-            return try JSONDecoder.truenas.decode(T.self, from: data)
-        } catch {
-            throw TrueNASClientError.decodingFailed(error)
+        try await send(method: method, params: params) { frame in
+            let response = try JSONDecoder.truenas.decode(JSONRPCResponse<T>.self, from: frame)
+            if let error = response.error { throw TrueNASClientError.rpcFailed(error) }
+            guard let result = response.result else { throw TrueNASClientError.unexpectedMessage }
+            return result
         }
     }
 
     func callRaw(method: String, params: [Any] = []) async throws -> JSONValue {
+        try await send(method: method, params: params) { frame in
+            let response = try JSONDecoder.truenas.decode(JSONRPCResponse<JSONValue>.self, from: frame)
+            if let error = response.error { throw TrueNASClientError.rpcFailed(error) }
+            // A missing or null result is legitimate for methods that only acknowledge.
+            return response.result ?? .null
+        }
+    }
+
+    private func send<T>(
+        method: String,
+        params: [Any],
+        decode: @escaping (Data) throws -> T
+    ) async throws -> T {
         guard isOpen, let task else { throw TrueNASClientError.notConnected }
         let id = nextId
         nextId += 1
@@ -120,11 +141,24 @@ actor TrueNASClient {
         } catch {
             throw TrueNASClientError.decodingFailed(error)
         }
-        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<JSONValue, Error>) in
-            pending[id] = cont
+        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<T, Error>) in
+            pending[id] = PendingCall(
+                deliver: { frame in
+                    do {
+                        cont.resume(returning: try decode(frame))
+                    } catch let error as TrueNASClientError {
+                        cont.resume(throwing: error)
+                    } catch {
+                        cont.resume(throwing: TrueNASClientError.decodingFailed(error))
+                    }
+                },
+                fail: { cont.resume(throwing: $0) }
+            )
             Task {
                 do {
-                    try await task.send(.string(String(data: data, encoding: .utf8) ?? ""))
+                    // JSONSerialization output is always valid UTF-8, so decoding it
+                    // can't fail — the old `?? ""` would have sent an empty frame.
+                    try await task.send(.string(String(decoding: data, as: UTF8.self)))
                 } catch {
                     self.failPending(id: id, with: .transport(error))
                 }
@@ -133,9 +167,7 @@ actor TrueNASClient {
     }
 
     private func failPending(id: Int, with error: TrueNASClientError) {
-        if let cont = pending.removeValue(forKey: id) {
-            cont.resume(throwing: error)
-        }
+        pending.removeValue(forKey: id)?.fail(error)
     }
 
     /// `deliveryKey` lets the caller subscribe to a parameterized event name
@@ -145,7 +177,7 @@ actor TrueNASClient {
         do {
             _ = try await callRaw(method: "core.subscribe", params: [event])
         } catch {
-            print("[core.subscribe \(event)] failed: \(error)")
+            Log.client.error("core.subscribe \(event, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
             throw error
         }
         let key = deliveryKey ?? event
@@ -202,7 +234,7 @@ actor TrueNASClient {
             cont.resume(throwing: error)
             openContinuation = nil
         }
-        for (_, cont) in pending { cont.resume(throwing: error) }
+        for (_, call) in pending { call.fail(error) }
         pending.removeAll()
         if finishStreams {
             for (_, group) in subscribers { for (_, c) in group { c.finish() } }
@@ -244,24 +276,18 @@ actor TrueNASClient {
         @unknown default: return
         }
 
-        let envelope: JSONRPCEnvelope
-        do {
-            envelope = try JSONDecoder.truenas.decode(JSONRPCEnvelope.self, from: data)
-        } catch {
+        // One decode per frame: routing and notification delivery come from the same
+        // pass, while a response's `result` is left for the waiting caller to decode
+        // into the type it actually wants.
+        guard let frame = try? JSONDecoder.truenas.decode(JSONRPCFrame.self, from: data) else { return }
+
+        if let id = frame.id, let call = pending.removeValue(forKey: id) {
+            call.deliver(data)
             return
         }
 
-        if let id = envelope.id, let cont = pending.removeValue(forKey: id) {
-            if let error = envelope.error {
-                cont.resume(throwing: TrueNASClientError.rpcFailed(error))
-            } else {
-                cont.resume(returning: envelope.result ?? .null)
-            }
-            return
-        }
-
-        if let method = envelope.method {
-            deliverNotification(method: method, params: envelope.params)
+        if let method = frame.method {
+            deliverNotification(method: method, params: frame.params)
         }
     }
 
@@ -284,9 +310,8 @@ actor TrueNASClient {
         case "http", "ws": components.scheme = "ws"
         default: throw TrueNASClientError.invalidEndpoint
         }
+        components.stripPathQueryAndFragment()
         components.path = "/api/current"
-        components.query = nil
-        components.fragment = nil
         guard let url = components.url else { throw TrueNASClientError.invalidEndpoint }
         return url
     }
@@ -328,22 +353,6 @@ private final class WSDelegate: NSObject, URLSessionWebSocketDelegate, @unchecke
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         emit(.completed(error))
-    }
-}
-
-// MARK: - JSONValue helpers
-
-extension JSONValue {
-    func asAny() -> Any {
-        switch self {
-        case .null: return NSNull()
-        case .bool(let v): return v
-        case .int(let v): return v
-        case .double(let v): return v
-        case .string(let v): return v
-        case .array(let v): return v.map { $0.asAny() }
-        case .object(let v): return v.mapValues { $0.asAny() }
-        }
     }
 }
 

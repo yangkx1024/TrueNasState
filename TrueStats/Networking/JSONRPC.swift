@@ -64,18 +64,21 @@ struct JSONRPCError: Decodable, Error, LocalizedError {
 }
 
 struct JSONRPCResponse<Result: Decodable>: Decodable {
-    let jsonrpc: String
+    let jsonrpc: String?
     let id: Int?
     let result: Result?
     let error: JSONRPCError?
 }
 
-/// Raw response used internally before we know the result type.
-struct JSONRPCEnvelope: Decodable {
-    let jsonrpc: String?
+/// Enough of an incoming frame to route it and, for a notification, to deliver it.
+///
+/// `result` is deliberately absent: a response's payload is decoded once by the caller
+/// that knows its type, so a large result is never materialized here. `params` costs
+/// nothing on a response (there isn't one) and saves a second full parse of every push
+/// frame — these arrive on every realtime tick.
+struct JSONRPCFrame: Decodable {
     let id: Int?
     let method: String?
-    let error: JSONRPCError?
+    /// Untyped because each subscriber interprets its own collection's shape.
     let params: JSONValue?
-    let result: JSONValue?
 }

@@ -65,14 +65,23 @@ TrueStats/
 ├── TrueStatsApp.swift        # @main, wires in AppDelegate
 ├── AppDelegate.swift         # NSStatusItem + NSPopover, status-bar badge
 ├── Auth/                     # Keychain credential store, auth state, login item
-├── Networking/               # JSON-RPC WebSocket client, typed API methods, reconnect
+├── Networking/               # JSON-RPC WebSocket client, typed API methods,
+│                             #   connection/reconnect policy, demo data
 ├── Models/                   # SystemInfo, Pool, App, Alert, RealtimeStats, AppLiveStat
-├── ViewModels/               # DashboardViewModel (Observable, @MainActor)
+├── ViewModels/               # DashboardViewModel + in-flight app operation tracking
 ├── Views/                    # SwiftUI views for the popover screens
+│   └── Components/           # Shared Row / SectionContainer primitives
+├── Support/                  # Logging, on-disk app icon cache
 └── Resources/                # Assets, icons
 
-TrueStatsTests/               # Unit tests for parsing, decoding and URL handling
+TrueStatsTests/               # Unit tests for parsing, decoding, URL handling and
+                              #   app-operation bookkeeping
 ```
+
+`DashboardViewModel` holds presentation state and maps TrueNAS streams onto it.
+Connection and retry policy live in `ConnectionCoordinator`, in-flight
+start/stop/upgrade bookkeeping in `AppOperationTracker`, and demo data in `DemoMode` —
+each is independently testable.
 
 ## License
 

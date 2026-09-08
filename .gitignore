@@ -28,12 +28,12 @@ DerivedData/
 *.dSYM
 
 # Swift Package Manager
+# Package.resolved and xcshareddata/swiftpm are deliberately NOT ignored: an app
+# should commit its resolved dependency versions so builds are reproducible.
 .build/
 .swiftpm/
 Packages/
 Package.pins
-Package.resolved
-*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
 
 # CocoaPods (if ever added)
 Pods/
