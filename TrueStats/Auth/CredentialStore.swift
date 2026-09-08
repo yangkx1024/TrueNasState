@@ -67,8 +67,16 @@ final class CredentialStore: @unchecked Sendable {
         // Adopt a key written by a version that used the bare host as the account, so
         // upgrading doesn't silently sign the user out.
         guard let host = endpoint.host, let legacy = readKey(account: host) else { return nil }
-        try? writeKey(legacy, account: Self.account(for: endpoint))
-        deleteKey(account: host)
+        do {
+            // Drop the legacy entry only once its replacement is safely written. It is
+            // the only persistent copy of the key, so deleting it after a failed write
+            // would sign the user out on the next launch.
+            try writeKey(legacy, account: Self.account(for: endpoint))
+            deleteKey(account: host)
+        } catch {
+            Log.credentials.error(
+                "keychain migration failed, keeping legacy entry: \(error.localizedDescription, privacy: .public)")
+        }
         return Credentials(endpoint: endpoint, apiKey: legacy)
     }
 

@@ -19,6 +19,11 @@ final class AppOperationTracker {
     /// Called on the main actor whenever an operation ends, however it ended.
     var onFinish: ((String) -> Void)?
 
+    /// Asks the server for a job's current state, returning nil when it no longer knows
+    /// the job. Consulted only when a watchdog expires; without it the watchdog has to
+    /// assume the operation is dead.
+    var jobStateProbe: ((Int) async throws -> TNJobState?)?
+
     private(set) var upgrading: Set<String> = []
     private(set) var toggling: Set<String> = []
     private var jobIDToAppID: [Int: String] = [:]
@@ -112,9 +117,40 @@ final class AppOperationTracker {
         watchdogs[appID] = Task { [weak self] in
             try? await Task.sleep(for: timeout)
             guard !Task.isCancelled, let self, isPending(appID) else { return }
+
+            if await isJobStillRunning(appID) {
+                // A large image pull can legitimately outrun the timeout. Clearing here
+                // would drop the spinner, free the app for a second request, and leave
+                // the eventual terminal event with nothing to match.
+                Log.dashboard.debug(
+                    "job for \(appID, privacy: .public) still running past the watchdog; waiting")
+                startWatchdog(for: appID)
+                return
+            }
+            // The real event may have landed while we were asking.
+            guard !Task.isCancelled, isPending(appID) else { return }
             Log.dashboard.warning(
                 "job for \(appID, privacy: .public) never reported a terminal state; clearing")
             finish(appID)
         }
+    }
+
+    /// True only when the server positively reports the job as still going. An unknown
+    /// job counts as finished — losing track of one is exactly what the watchdog is
+    /// for — while a probe we couldn't run counts as running, since guessing "finished"
+    /// there would resurrect the very bug the watchdog guards against. A dropped
+    /// connection clears everything through `reset()` regardless.
+    private func isJobStillRunning(_ appID: String) async -> Bool {
+        guard let jobID = jobID(for: appID), let jobStateProbe else { return false }
+        do {
+            guard let state = try await jobStateProbe(jobID) else { return false }
+            return !state.isTerminal
+        } catch {
+            return true
+        }
+    }
+
+    private func jobID(for appID: String) -> Int? {
+        jobIDToAppID.first { $0.value == appID }?.key
     }
 }

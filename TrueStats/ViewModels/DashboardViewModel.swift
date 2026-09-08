@@ -47,6 +47,10 @@ final class DashboardViewModel {
             credentials.clear()
             authState = .loggedOut(error: error.localizedDescription)
         }
+        operations.jobStateProbe = { [weak self] jobID in
+            guard let client = self?.client else { return nil }
+            return try await client.fetchJobState(id: jobID)
+        }
         operations.onFinish = { [weak self] _ in
             // togglingApps just cleared, so a fresh fetch is no longer filtered by the
             // merge step. Covers the case where the state didn't change and no
@@ -240,8 +244,11 @@ final class DashboardViewModel {
     private func refreshCatalogIconsIfNeeded() async {
         guard let client, let host = endpoint?.host, !didFetchCatalogIcons else { return }
         guard apps.contains(where: { appIcons[$0.catalogName ?? $0.name] == nil }) else { return }
-        didFetchCatalogIcons = true
         guard let icons = try? await client.fetchCatalogIcons(), !icons.isEmpty else { return }
+        // Only a fetch that actually produced icons is worth not repeating. Marking it
+        // done up front meant a connection dropping mid-fetch suppressed every later
+        // attempt for the rest of the login, however many times we reconnected.
+        didFetchCatalogIcons = true
         if icons != appIcons { appIcons = icons }
         AppIconCache.save(icons, host: host)
     }

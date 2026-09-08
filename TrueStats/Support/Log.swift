@@ -12,4 +12,5 @@ enum Log {
 
     static let dashboard = Logger(subsystem: subsystem, category: "dashboard")
     static let client = Logger(subsystem: subsystem, category: "client")
+    static let credentials = Logger(subsystem: subsystem, category: "credentials")
 }

@@ -139,6 +139,68 @@ struct AppOperationTrackerTests {
         #expect(finished().isEmpty)
     }
 
+    @Test("the watchdog keeps waiting while the server says the job is still running")
+    func watchdogDefersToRunningJob() async throws {
+        // A slow image pull must not be mistaken for a lost event: clearing here would
+        // drop the spinner and let the user fire a second upgrade.
+        let (tracker, finished) = makeTracker()
+        tracker.watchdogTimeout = .milliseconds(50)
+        tracker.jobStateProbe = { _ in .running }
+        tracker.beginToggle("plex")
+        tracker.bind(jobID: 5, to: "plex")
+
+        try await Task.sleep(for: .milliseconds(400))
+
+        #expect(tracker.isPending("plex"))
+        #expect(finished().isEmpty)
+
+        // ...and it still completes normally once the job really does finish.
+        tracker.note(TNJob(id: 5, state: .success))
+        #expect(finished() == ["plex"])
+    }
+
+    @Test("the watchdog clears once the server reports the job finished")
+    func watchdogClearsFinishedJob() async throws {
+        let (tracker, finished) = makeTracker()
+        tracker.watchdogTimeout = .milliseconds(50)
+        tracker.jobStateProbe = { _ in .success }
+        tracker.beginToggle("plex")
+        tracker.bind(jobID: 5, to: "plex")
+
+        try await Task.sleep(for: .milliseconds(400))
+
+        #expect(!tracker.isPending("plex"))
+        #expect(finished() == ["plex"])
+    }
+
+    @Test("the watchdog clears when the server no longer knows the job")
+    func watchdogClearsUnknownJob() async throws {
+        let (tracker, finished) = makeTracker()
+        tracker.watchdogTimeout = .milliseconds(50)
+        tracker.jobStateProbe = { _ in nil }
+        tracker.beginToggle("plex")
+        tracker.bind(jobID: 5, to: "plex")
+
+        try await Task.sleep(for: .milliseconds(400))
+
+        #expect(finished() == ["plex"])
+    }
+
+    @Test("a probe that fails keeps the operation rather than guessing")
+    func watchdogKeepsWaitingWhenProbeFails() async throws {
+        struct ProbeFailure: Error {}
+        let (tracker, finished) = makeTracker()
+        tracker.watchdogTimeout = .milliseconds(50)
+        tracker.jobStateProbe = { _ in throw ProbeFailure() }
+        tracker.beginToggle("plex")
+        tracker.bind(jobID: 5, to: "plex")
+
+        try await Task.sleep(for: .milliseconds(400))
+
+        #expect(tracker.isPending("plex"))
+        #expect(finished().isEmpty)
+    }
+
     @Test("the watchdog clears an operation whose terminal event never arrives")
     func watchdogFires() async throws {
         let (tracker, finished) = makeTracker()
