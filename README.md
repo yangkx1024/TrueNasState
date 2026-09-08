@@ -12,7 +12,7 @@ A lightweight macOS menu-bar app for monitoring a TrueNAS SCALE server. It lives
 ## Requirements
 
 - macOS 14.0 or later
-- Xcode 15+ (Swift 5)
+- Xcode 16 or later — the project builds in the Swift 6 language mode (developed against Xcode 26)
 - A TrueNAS SCALE server reachable over `https://` with a user-linked API key
 
 ## Building
@@ -20,6 +20,19 @@ A lightweight macOS menu-bar app for monitoring a TrueNAS SCALE server. It lives
 Open `TrueNasState.xcodeproj` in Xcode and run the `TrueStats` scheme. The project uses automatic code signing and the hardened runtime; signing requires a local development team.
 
 The app is a status-bar agent — there is no Dock icon and no main window. After launching, look for the drive icon in the menu bar.
+
+## Testing
+
+`TrueStatsTests` covers the pure logic that TrueNAS schema changes tend to break: the
+`reporting.realtime` / `app.stats` payload parsers, model decoding, WebSocket URL
+construction, and endpoint normalization. Run them from Xcode (⌘U) or:
+
+```sh
+xcodebuild test -project TrueNasState.xcodeproj -scheme TrueStats -destination 'platform=macOS'
+```
+
+CI runs the same suite plus a Release build on every push and pull request — see
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ## Setup
 
@@ -57,6 +70,8 @@ TrueStats/
 ├── ViewModels/               # DashboardViewModel (Observable, @MainActor)
 ├── Views/                    # SwiftUI views for the popover screens
 └── Resources/                # Assets, icons
+
+TrueStatsTests/               # Unit tests for parsing, decoding and URL handling
 ```
 
 ## License

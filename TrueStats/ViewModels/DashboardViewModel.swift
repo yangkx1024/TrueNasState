@@ -15,6 +15,7 @@ final class DashboardViewModel {
     var upgradingApps: Set<String> = []
     var togglingApps: Set<String> = []
     private var jobIDToAppID: [Int: String] = [:]
+    private var pendingOpTimeouts: [String: Task<Void, Never>] = [:]
     var systemUpdateAvailable = false
     var lastUpdated: Date?
     private(set) var screen: Screen = .dashboard
@@ -96,13 +97,15 @@ final class DashboardViewModel {
     func upgradeApp(_ app: TNApp) async {
         guard let client, !upgradingApps.contains(app.id) else { return }
         upgradingApps.insert(app.id)
+        startPendingOperationTimeout(for: app.id)
         do {
             let jobID = try await client.upgradeApp(name: app.id)
             jobIDToAppID[jobID] = app.id
             // Surface RUNNING → DEPLOYING before the job stream fires.
             await loadSnapshot()
+            await reconcileJob(jobID, client: client)
         } catch {
-            upgradingApps.remove(app.id)
+            clearPendingOperation(for: app.id)
             print("[upgrade] \(app.id) failed: \(error.localizedDescription)")
         }
     }
@@ -122,6 +125,7 @@ final class DashboardViewModel {
         }
         let originalState = apps[idx].state
         togglingApps.insert(app.id)
+        startPendingOperationTimeout(for: app.id)
         // Surface STOPPING / DEPLOYING immediately — TrueNAS sometimes jumps
         // straight to the terminal state on fast operations and never publishes
         // the transitional snapshot.
@@ -133,12 +137,60 @@ final class DashboardViewModel {
             case .stop:  jobID = try await client.stopApp(name: app.id)
             }
             jobIDToAppID[jobID] = app.id
+            await reconcileJob(jobID, client: client)
         } catch {
-            togglingApps.remove(app.id)
+            clearPendingOperation(for: app.id)
             if let idx = apps.firstIndex(where: { $0.id == app.id }) {
                 apps[idx].state = originalState
             }
             print("[toggle] \(app.id) failed: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Pending app operations
+
+    /// Backstop for a terminal job event that never arrives at all (a frame dropped
+    /// on a still-live subscription). Without it `togglingApps` would keep pinning
+    /// the optimistic state in `refreshApps` indefinitely.
+    private static let pendingOperationTimeout = Duration.seconds(120)
+
+    /// `app.start` / `app.stop` / `app.upgrade` can reach a terminal state inside the
+    /// same round-trip that returns their job id, so `subscribeJobs` may deliver the
+    /// terminal event while we're still suspended and find no `jobIDToAppID` entry to
+    /// match. Re-read the job once it is bound so a finished job can't leave the row
+    /// spinning until the next reconnect.
+    private func reconcileJob(_ jobID: Int, client: TrueNASClient) async {
+        guard let state = try? await client.fetchJobState(id: jobID),
+              TNJob(id: jobID, state: state).isTerminal,
+              let appID = jobIDToAppID[jobID]
+        else { return }
+        await finishPendingOperation(for: appID)
+    }
+
+    /// Drops all pending-operation bookkeeping for `appID` without touching the UI.
+    private func clearPendingOperation(for appID: String) {
+        upgradingApps.remove(appID)
+        togglingApps.remove(appID)
+        pendingOpTimeouts.removeValue(forKey: appID)?.cancel()
+        jobIDToAppID = jobIDToAppID.filter { $0.value != appID }
+    }
+
+    private func finishPendingOperation(for appID: String) async {
+        clearPendingOperation(for: appID)
+        // togglingApps just cleared, so a fresh fetchApps is no longer filtered by
+        // the merge step. Cover the case where the state didn't change (no
+        // app.query event will fire).
+        await refreshApps()
+    }
+
+    private func startPendingOperationTimeout(for appID: String) {
+        pendingOpTimeouts[appID]?.cancel()
+        pendingOpTimeouts[appID] = Task { [weak self] in
+            try? await Task.sleep(for: Self.pendingOperationTimeout)
+            guard !Task.isCancelled, let self else { return }
+            guard upgradingApps.contains(appID) || togglingApps.contains(appID) else { return }
+            print("[job] \(appID) never reported a terminal state; clearing")
+            await finishPendingOperation(for: appID)
         }
     }
 
@@ -325,19 +377,9 @@ final class DashboardViewModel {
             guard let stream = try? await client.subscribeJobs() else { return }
             for await job in stream {
                 if Task.isCancelled { return }
-                await MainActor.run {
-                    guard let self else { return }
-                    guard let appID = self.jobIDToAppID[job.id] else { return }
-                    if job.isTerminal {
-                        self.upgradingApps.remove(appID)
-                        self.togglingApps.remove(appID)
-                        self.jobIDToAppID.removeValue(forKey: job.id)
-                        // togglingApps just cleared, so a fresh fetchApps is no
-                        // longer filtered by the merge step. Cover the case where
-                        // the state didn't change (no app.query event will fire).
-                        Task { [weak self] in await self?.refreshApps() }
-                    }
-                }
+                guard let self else { return }
+                guard job.isTerminal, let appID = jobIDToAppID[job.id] else { continue }
+                await finishPendingOperation(for: appID)
             }
         }
         workers.append(jobsTask)
@@ -383,6 +425,8 @@ final class DashboardViewModel {
         upgradingApps = []
         togglingApps = []
         jobIDToAppID = [:]
+        for (_, timeout) in pendingOpTimeouts { timeout.cancel() }
+        pendingOpTimeouts.removeAll()
         stopAppStatsSubscription()
         demoTickerTask?.cancel()
         demoTickerTask = nil

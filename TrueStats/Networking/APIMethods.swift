@@ -51,6 +51,17 @@ extension TrueNASClient {
         return jobID
     }
 
+    /// Point-in-time state for a single job. `app.start` and friends can finish
+    /// inside the RPC round-trip that returns the job id, so the terminal
+    /// `core.get_jobs` event can fire before the caller knows which id to watch;
+    /// this lets the caller re-read the job once it does.
+    func fetchJobState(id: Int) async throws -> TNJobState? {
+        let filters: [Any] = [["id", "=", id] as [Any]]
+        let raw = try await callRaw(method: "core.get_jobs", params: [filters])
+        guard let fields = raw.arrayValue?.first?.objectValue else { return nil }
+        return fields["state"]?.stringValue.flatMap(TNJobState.init(rawValue:))
+    }
+
     /// Returns true when TrueNAS reports a system upgrade is available.
     /// `update.check_available` queries the upstream update server, so this
     /// is meant for occasional checks (connect / manual refresh), not polling.

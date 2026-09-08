@@ -2,11 +2,23 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(DashboardViewModel.self) private var viewModel
+    @State private var loginItemError: String?
 
+    /// The getter reads the live `SMAppService` status rather than a cached copy, so
+    /// a rejected or approval-pending registration snaps the switch back to the
+    /// truth. Writing `loginItemError` is what re-renders the view to make that
+    /// snap-back visible.
     private var launchAtLogin: Binding<Bool> {
         Binding(
             get: { LoginItemController.isEnabled },
-            set: { LoginItemController.setEnabled($0) }
+            set: { newValue in
+                do {
+                    try LoginItemController.setEnabled(newValue)
+                    loginItemError = nil
+                } catch {
+                    loginItemError = error.localizedDescription
+                }
+            }
         )
     }
 
@@ -21,6 +33,13 @@ struct SettingsView: View {
             }
             .toggleStyle(.switch)
             .controlSize(.small)
+
+            if let loginItemError {
+                Text(loginItemError)
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             Divider()
 

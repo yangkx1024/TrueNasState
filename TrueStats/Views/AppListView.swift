@@ -146,7 +146,7 @@ private struct AppIcon: View {
 /// Third-party SVG libraries (SwiftDraw, SVGView) each fail on different
 /// real-world catalog icons. The only renderer that handles every valid SVG
 /// is WebKit. We render each unique URL exactly once via an off-screen
-/// WKWebView, snapshot the result to an NSImage, and cache that — after the
+/// WKWebView, rasterize the result to an NSImage, and cache that — after the
 /// first hit each row reads a plain raster image, no WebKit involved.
 private struct SVGIconView: View {
     let url: URL
@@ -192,26 +192,57 @@ private final class SVGIconCache {
     }
 }
 
+/// Rasterizes an SVG through WebKit and hands back a transparent PNG.
+///
+/// The bytes are fetched first and inlined as a `data:` URL rather than pointed at
+/// from a remote `<img src>`: a cross-origin image taints the `<canvas>` and makes
+/// `toDataURL` throw. Drawing to a canvas (instead of snapshotting the web view)
+/// keeps the result's alpha channel intact using only public API, and resolves as
+/// soon as the image has actually decoded rather than after a fixed delay.
+/// Loading through `<img>` also keeps the SVG in the non-scripting "secure static
+/// mode" browsers apply to images.
 @MainActor
 private func renderSVG(url: URL, size: CGSize) async -> NSImage? {
+    guard let (data, response) = try? await URLSession.shared.data(from: url) else { return nil }
+    if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) { return nil }
+
+    let side = Int(size.width)
     let webView = WKWebView(frame: CGRect(origin: .zero, size: size))
-    webView.setValue(false, forKey: "drawsBackground")
     let delegate = SVGWebViewDelegate()
     webView.navigationDelegate = delegate
     let html = """
-    <!doctype html><html><head><meta charset='utf-8'>
-    <style>html,body{margin:0;padding:0;background:transparent;width:\(Int(size.width))px;height:\(Int(size.height))px;}
-    body{display:flex;align-items:center;justify-content:center;}
-    img{max-width:100%;max-height:100%;}</style></head>
-    <body><img src='\(url.absoluteString)'/></body></html>
+    <!doctype html><html><head><meta charset='utf-8'></head><body><script>
+    window.renderIcon = function (src, side) {
+      return new Promise(function (resolve, reject) {
+        var img = new Image();
+        img.onload = function () {
+          var canvas = document.createElement('canvas');
+          canvas.width = side; canvas.height = side;
+          var w = img.width || side, h = img.height || side;
+          var scale = Math.min(side / w, side / h);
+          canvas.getContext('2d').drawImage(
+            img, (side - w * scale) / 2, (side - h * scale) / 2, w * scale, h * scale);
+          try { resolve(canvas.toDataURL('image/png')); } catch (e) { reject(e.toString()); }
+        };
+        img.onerror = function () { reject('decode failed'); };
+        img.src = src;
+      });
+    };
+    </script></body></html>
     """
     webView.loadHTMLString(html, baseURL: nil)
     await delegate.waitForFinish()
-    // Give the <img> a beat to lay out after navigation finishes.
-    try? await Task.sleep(nanoseconds: 100_000_000)
-    let config = WKSnapshotConfiguration()
-    config.rect = CGRect(origin: .zero, size: size)
-    return try? await webView.takeSnapshot(configuration: config)
+
+    let dataURL = try? await webView.callAsyncJavaScript(
+        "return await window.renderIcon(src, side);",
+        arguments: ["src": "data:image/svg+xml;base64,\(data.base64EncodedString())", "side": side],
+        contentWorld: .page
+    ) as? String
+    guard let dataURL = dataURL ?? nil,
+          let comma = dataURL.firstIndex(of: ","),
+          let png = Data(base64Encoded: String(dataURL[dataURL.index(after: comma)...]))
+    else { return nil }
+    return NSImage(data: png)
 }
 
 private final class SVGWebViewDelegate: NSObject, WKNavigationDelegate {
@@ -273,6 +304,7 @@ private struct AppStateControl: View {
     }
 }
 
+@MainActor
 private func appRowIconButton(systemImage: String, label: String,
                               action: @escaping () -> Void) -> some View {
     Button(action: action) {

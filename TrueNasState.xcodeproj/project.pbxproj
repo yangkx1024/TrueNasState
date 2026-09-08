@@ -6,8 +6,19 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXContainerItemProxy section */
+		B4000051000000000000000D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B3000001000000000000000A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B3000010000000000000000D;
+			remoteInfo = TrueStats;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		B3000020000000000000000F /* TrueStats.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TrueStats.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B4000020000000000000000F /* TrueStatsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TrueStatsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -29,10 +40,22 @@
 			path = TrueStats;
 			sourceTree = "<group>";
 		};
+		B4001001000000000000000A /* TrueStatsTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = TrueStatsTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		B3000003000000000000000C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B4000003000000000000000C /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -46,6 +69,7 @@
 			isa = PBXGroup;
 			children = (
 				B3001001000000000000000A /* TrueStats */,
+				B4001001000000000000000A /* TrueStatsTests */,
 				B3000002000000000000000A /* Products */,
 			);
 			sourceTree = "<group>";
@@ -54,6 +78,7 @@
 			isa = PBXGroup;
 			children = (
 				B3000020000000000000000F /* TrueStats.app */,
+				B4000020000000000000000F /* TrueStatsTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -83,7 +108,38 @@
 			productReference = B3000020000000000000000F /* TrueStats.app */;
 			productType = "com.apple.product-type.application";
 		};
+		B4000010000000000000000D /* TrueStatsTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B4000040000000000000000E /* Build configuration list for PBXNativeTarget "TrueStatsTests" */;
+			buildPhases = (
+				B4000004000000000000000C /* Sources */,
+				B4000003000000000000000C /* Frameworks */,
+				B4000005000000000000000C /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B4000050000000000000000D /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				B4001001000000000000000A /* TrueStatsTests */,
+			);
+			name = TrueStatsTests;
+			packageProductDependencies = (
+			);
+			productName = TrueStatsTests;
+			productReference = B4000020000000000000000F /* TrueStatsTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
+
+/* Begin PBXTargetDependency section */
+		B4000050000000000000000D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B3000010000000000000000D /* TrueStats */;
+			targetProxy = B4000051000000000000000D /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXProject section */
 		B3000001000000000000000A /* Project object */ = {
@@ -91,8 +147,12 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2640;
-				LastUpgradeCheck = 2650;
+				LastUpgradeCheck = 2660;
 				TargetAttributes = {
+					B4000010000000000000000D = {
+						CreatedOnToolsVersion = 26.6;
+						TestTargetID = B3000010000000000000000D;
+					};
 					B3000010000000000000000D = {
 						CreatedOnToolsVersion = 26.4.1;
 					};
@@ -121,6 +181,7 @@
 			projectRoot = "";
 			targets = (
 				B3000010000000000000000D /* TrueStats */,
+				B4000010000000000000000D /* TrueStatsTests */,
 			);
 		};
 /* End PBXProject section */
@@ -133,10 +194,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B4000005000000000000000C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		B3000004000000000000000C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B4000004000000000000000C /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -299,7 +374,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = net.yangkx.truestate;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
 		};
@@ -330,7 +405,43 @@
 				PRODUCT_BUNDLE_IDENTIFIER = net.yangkx.truestate;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		B4000041000000000000000E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = U2858ENVTH;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0.3;
+				PRODUCT_BUNDLE_IDENTIFIER = net.yangkx.truestate.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TrueStats.app/Contents/MacOS/TrueStats";
+			};
+			name = Debug;
+		};
+		B4000042000000000000000E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = U2858ENVTH;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0.3;
+				PRODUCT_BUNDLE_IDENTIFIER = net.yangkx.truestate.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TrueStats.app/Contents/MacOS/TrueStats";
 			};
 			name = Release;
 		};
@@ -351,6 +462,15 @@
 			buildConfigurations = (
 				B3000041000000000000000E /* Debug */,
 				B3000042000000000000000E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B4000040000000000000000E /* Build configuration list for PBXNativeTarget "TrueStatsTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B4000041000000000000000E /* Debug */,
+				B4000042000000000000000E /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 enum TrueNASClientError: Error, LocalizedError {
     case invalidEndpoint
@@ -60,7 +61,7 @@ actor TrueNASClient {
     // MARK: - Connection
 
     func connect() async throws {
-        delegate.onEvent = { [weak self] event in
+        delegate.setHandler { [weak self] event in
             Task { await self?.handleDelegate(event: event) }
         }
 
@@ -82,7 +83,7 @@ actor TrueNASClient {
     func disconnect() {
         receiveLoop?.cancel()
         receiveLoop = nil
-        delegate.onEvent = nil
+        delegate.setHandler(nil)
         task?.cancel(with: .normalClosure, reason: nil)
         task = nil
         session?.invalidateAndCancel()
@@ -300,18 +301,33 @@ private final class WSDelegate: NSObject, URLSessionWebSocketDelegate, @unchecke
         case completed(Error?)
     }
 
-    var onEvent: ((Event) -> Void)?
+    /// The handler is installed from the `TrueNASClient` actor but invoked on
+    /// URLSession's delegate queue, so the two never share an executor and the
+    /// storage needs a lock of its own. The `@unchecked Sendable` above only
+    /// silences the compiler's check — it does not make the access safe.
+    private let handler = OSAllocatedUnfairLock<(@Sendable (Event) -> Void)?>(initialState: nil)
+
+    func setHandler(_ newValue: (@Sendable (Event) -> Void)?) {
+        handler.withLock { $0 = newValue }
+    }
+
+    /// Copies the handler out under the lock and calls it outside, so a handler
+    /// that re-enters the delegate can't deadlock on the same lock.
+    private func emit(_ event: Event) {
+        let handler = handler.withLock { $0 }
+        handler?(event)
+    }
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
-        onEvent?(.opened)
+        emit(.opened)
     }
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
-        onEvent?(.closed(closeCode, reason))
+        emit(.closed(closeCode, reason))
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        onEvent?(.completed(error))
+        emit(.completed(error))
     }
 }
 

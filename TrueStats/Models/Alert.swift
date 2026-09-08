@@ -48,17 +48,15 @@ struct TNAlert: Decodable, Identifiable, Equatable {
         self.datetime = TNAlert.decodeDate(c)
     }
 
-    private static let isoFormatter: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
+    // `Date.ISO8601FormatStyle` is `Sendable`, unlike `ISO8601DateFormatter`, so it can
+    // be shared from a static under the Swift 6 language mode.
+    private static let isoFractionalSeconds = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+    private static let isoWholeSeconds = Date.ISO8601FormatStyle()
 
     private static func decodeDate(_ c: KeyedDecodingContainer<CodingKeys>) -> Date? {
         if let s = try? c.decode(String.self, forKey: .datetime) {
-            if let d = isoFormatter.date(from: s) { return d }
-            let plain = ISO8601DateFormatter()
-            if let d = plain.date(from: s) { return d }
+            if let d = try? Date(s, strategy: isoFractionalSeconds) { return d }
+            if let d = try? Date(s, strategy: isoWholeSeconds) { return d }
         }
         // Legacy: some older builds returned `{"$date": <ms>}` or a number of ms.
         if let ms = try? c.decode(Double.self, forKey: .datetime) {

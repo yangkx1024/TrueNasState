@@ -21,7 +21,11 @@ enum CredentialStoreError: Error, LocalizedError {
     }
 }
 
-final class CredentialStore {
+/// `@unchecked Sendable`: every stored property is an immutable `let`, and both
+/// backing stores it touches — `UserDefaults` and the `SecItem*` Keychain API —
+/// are documented as thread-safe. `UserDefaults` itself is explicitly declared
+/// non-`Sendable` by Foundation, so the conformance can't be checked.
+final class CredentialStore: @unchecked Sendable {
     static let shared = CredentialStore()
 
     private let service = "net.yangkx.truestate"
