@@ -51,6 +51,16 @@ extension TrueNASClient {
         return jobID
     }
 
+    /// Point-in-time state for a single job, or nil when the server no longer knows
+    /// about it. Used only when an operation's watchdog expires, to tell a genuinely
+    /// slow job (a large image pull) apart from a terminal event we never received.
+    func fetchJobState(id: Int) async throws -> TNJobState? {
+        let filters: [Any] = [["id", "=", id] as [Any]]
+        let raw = try await callRaw(method: "core.get_jobs", params: [filters])
+        guard let fields = raw.arrayValue?.first?.objectValue else { return nil }
+        return fields["state"]?.stringValue.flatMap(TNJobState.init(rawValue:))
+    }
+
     /// Returns true when TrueNAS reports a system upgrade is available.
     /// `update.check_available` queries the upstream update server, so this
     /// is meant for occasional checks (connect / manual refresh), not polling.

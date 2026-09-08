@@ -68,7 +68,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private static let driveIcon: NSImage = {
-        let image = NSImage(named: "MenuBarIcon")!
+        // Falling back to a symbol keeps a broken asset catalog from taking the whole
+        // status item down on launch.
+        let image = NSImage(named: "MenuBarIcon")
+            ?? NSImage(systemSymbolName: "externaldrive", accessibilityDescription: "TrueStats")
+            ?? NSImage(size: NSSize(width: 18, height: 18))
         image.isTemplate = true
         image.size = NSSize(width: 18, height: 18)
         return image

@@ -12,7 +12,7 @@ A lightweight macOS menu-bar app for monitoring a TrueNAS SCALE server. It lives
 ## Requirements
 
 - macOS 14.0 or later
-- Xcode 15+ (Swift 5)
+- Xcode 16 or later — the project builds in the Swift 6 language mode (developed against Xcode 26)
 - A TrueNAS SCALE server reachable over `https://` with a user-linked API key
 
 ## Building
@@ -20,6 +20,19 @@ A lightweight macOS menu-bar app for monitoring a TrueNAS SCALE server. It lives
 Open `TrueNasState.xcodeproj` in Xcode and run the `TrueStats` scheme. The project uses automatic code signing and the hardened runtime; signing requires a local development team.
 
 The app is a status-bar agent — there is no Dock icon and no main window. After launching, look for the drive icon in the menu bar.
+
+## Testing
+
+`TrueStatsTests` covers the pure logic that TrueNAS schema changes tend to break: the
+`reporting.realtime` / `app.stats` payload parsers, model decoding, WebSocket URL
+construction, and endpoint normalization. Run them from Xcode (⌘U) or:
+
+```sh
+xcodebuild test -project TrueNasState.xcodeproj -scheme TrueStats -destination 'platform=macOS'
+```
+
+CI runs the same suite plus a Release build on every push and pull request — see
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ## Setup
 
@@ -52,12 +65,23 @@ TrueStats/
 ├── TrueStatsApp.swift        # @main, wires in AppDelegate
 ├── AppDelegate.swift         # NSStatusItem + NSPopover, status-bar badge
 ├── Auth/                     # Keychain credential store, auth state, login item
-├── Networking/               # JSON-RPC WebSocket client, typed API methods, reconnect
+├── Networking/               # JSON-RPC WebSocket client, typed API methods,
+│                             #   connection/reconnect policy, demo data
 ├── Models/                   # SystemInfo, Pool, App, Alert, RealtimeStats, AppLiveStat
-├── ViewModels/               # DashboardViewModel (Observable, @MainActor)
+├── ViewModels/               # DashboardViewModel + in-flight app operation tracking
 ├── Views/                    # SwiftUI views for the popover screens
+│   └── Components/           # Shared Row / SectionContainer primitives
+├── Support/                  # Logging, on-disk app icon cache
 └── Resources/                # Assets, icons
+
+TrueStatsTests/               # Unit tests for parsing, decoding, URL handling and
+                              #   app-operation bookkeeping
 ```
+
+`DashboardViewModel` holds presentation state and maps TrueNAS streams onto it.
+Connection and retry policy live in `ConnectionCoordinator`, in-flight
+start/stop/upgrade bookkeeping in `AppOperationTracker`, and demo data in `DemoMode` —
+each is independently testable.
 
 ## License
 

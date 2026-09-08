@@ -1,49 +1,78 @@
 import Foundation
 import Observation
 
+/// Presentation state for the popover: what the screens read, and the user intents
+/// they trigger.
+///
+/// Connection policy lives in `ConnectionCoordinator`, in-flight app operations in
+/// `AppOperationTracker`, and demo data in `DemoMode`. What's left here is mapping
+/// TrueNAS streams onto observable state.
 @MainActor
 @Observable
 final class DashboardViewModel {
-    var authState: AuthState = .loggedOut(error: nil)
-    var systemInfo: SystemInfo?
-    var pools: [Pool] = []
-    var apps: [TNApp] = []
-    var alerts: [TNAlert] = []
-    var stats: RealtimeStats?
-    var appStats: [String: AppLiveStat] = [:]
-    var appIcons: [String: URL] = [:]
-    var upgradingApps: Set<String> = []
-    var togglingApps: Set<String> = []
-    private var jobIDToAppID: [Int: String] = [:]
-    var systemUpdateAvailable = false
-    var lastUpdated: Date?
+    private(set) var authState: AuthState = .loggedOut(error: nil)
+    private(set) var systemInfo: SystemInfo?
+    private(set) var pools: [Pool] = []
+    private(set) var apps: [TNApp] = []
+    private(set) var alerts: [TNAlert] = []
+    private(set) var stats: RealtimeStats?
+    private(set) var appStats: [String: AppLiveStat] = [:]
+    private(set) var appIcons: [String: URL] = [:]
+    private(set) var systemUpdateAvailable = false
+    private(set) var lastUpdated: Date?
     private(set) var screen: Screen = .dashboard
     private(set) var endpoint: URL?
 
     enum Screen: Equatable { case dashboard, appList, settings }
 
     private let credentials = CredentialStore.shared
-    private var client: TrueNASClient?
+    private let connection = ConnectionCoordinator()
+    private let operations = AppOperationTracker()
     private var workers: [Task<Void, Never>] = []
-    private var appStatsTask: Task<Void, Never>?
     private var didBootstrap = false
-    private var reconnectController: ReconnectController?
     private var demoTickerTask: Task<Void, Never>?
+    private var didFetchCatalogIcons = false
+
+    private var client: TrueNASClient? { connection.client }
 
     init() {
+        connection.onWillConnect = { [weak self] in await self?.teardownSession() }
+        connection.onConnected = { [weak self] client in await self?.sessionDidConnect(client) }
+        connection.onReconnecting = { [weak self] in
+            guard let self, authState == .connecting else { return }
+            authState = .reconnecting
+        }
+        connection.onAuthFailure = { [weak self] error in
+            guard let self else { return }
+            credentials.clear()
+            authState = .loggedOut(error: error.localizedDescription)
+        }
+        operations.jobStateProbe = { [weak self] jobID in
+            guard let client = self?.client else { return nil }
+            return try await client.fetchJobState(id: jobID)
+        }
+        operations.onFinish = { [weak self] _ in
+            // togglingApps just cleared, so a fresh fetch is no longer filtered by the
+            // merge step. Covers the case where the state didn't change and no
+            // app.query event will fire.
+            Task { [weak self] in await self?.refreshApps() }
+        }
         // The menu-bar popover is rebuilt on every click, so .task would re-fire login.
         Task { [weak self] in await self?.bootstrap() }
     }
 
+    // MARK: - Derived state
+
     var activeAlertCount: Int { alerts.filter { $0.isActive }.count }
+
+    func isUpgrading(_ appID: String) -> Bool { operations.isUpgrading(appID) }
+    func isToggling(_ appID: String) -> Bool { operations.isToggling(appID) }
 
     func navigate(to screen: Screen) {
         self.screen = screen
-        switch screen {
-        case .appList: startAppStatsSubscription()
-        case .dashboard, .settings: stopAppStatsSubscription()
-        }
     }
+
+    // MARK: - Session lifecycle
 
     func bootstrap() async {
         guard !didBootstrap else { return }
@@ -58,7 +87,7 @@ final class DashboardViewModel {
         }
         authState = .connecting
         endpoint = saved.endpoint
-        startReconnectController(credentials: saved)
+        connection.connectWithRetry(credentials: saved)
     }
 
     func login(endpointString: String, apiKey: String) async {
@@ -74,10 +103,10 @@ final class DashboardViewModel {
     }
 
     func logout() async {
-        reconnectController?.stop()
-        reconnectController = nil
         await stop()
+        if let host = endpoint?.host { AppIconCache.clear(host: host) }
         credentials.clear()
+        didFetchCatalogIcons = false
         systemInfo = nil
         pools = []
         apps = []
@@ -93,17 +122,74 @@ final class DashboardViewModel {
         authState = .loggedOut(error: nil)
     }
 
+    private func connect(endpoint: URL, apiKey: String, persistOnSuccess: Bool) async {
+        if DemoMode.matches(endpoint: endpoint, apiKey: apiKey) {
+            await enterDemoMode(endpoint: endpoint, apiKey: apiKey, persistOnSuccess: persistOnSuccess)
+            return
+        }
+        authState = .connecting
+        self.endpoint = endpoint
+        let creds = Credentials(endpoint: endpoint, apiKey: apiKey)
+        do {
+            try await connection.connect(credentials: creds)
+        } catch {
+            authState = .loggedOut(error: error.localizedDescription)
+            return
+        }
+        if persistOnSuccess {
+            try? credentials.save(creds)
+        }
+    }
+
+    /// Post-connect setup: load what the dashboard shows, then start the streams that
+    /// keep it fresh.
+    private func sessionDidConnect(_ client: TrueNASClient) async {
+        authState = .loggedIn
+        loadCachedCatalogIcons()
+        async let snapshot: Void = loadSnapshot()
+        async let updateStatus: Void = loadSystemUpdateStatus()
+        _ = await (snapshot, updateStatus)
+        startSubscriptions(client: client)
+        startPeriodicRefresh()
+        // Deliberately not awaited: the catalog fetch must not hold up subscriptions.
+        workers.append(Task { [weak self] in await self?.refreshCatalogIconsIfNeeded() })
+    }
+
+    /// Tears down everything bound to a client without touching the client itself, so
+    /// it can run before a reconnect attempt as well as on a full stop.
+    private func teardownSession() async {
+        for task in workers { task.cancel() }
+        workers.removeAll()
+        operations.reset()
+        demoTickerTask?.cancel()
+        demoTickerTask = nil
+    }
+
+    private func stop() async {
+        await teardownSession()
+        await connection.stop()
+    }
+
+    private func notifyConnectionLost() {
+        guard authState == .loggedIn else { return }
+        authState = .reconnecting
+        connection.reconnect()
+    }
+
+    // MARK: - App operations
+
     func upgradeApp(_ app: TNApp) async {
-        guard let client, !upgradingApps.contains(app.id) else { return }
-        upgradingApps.insert(app.id)
+        guard let client, !operations.isUpgrading(app.id) else { return }
+        operations.beginUpgrade(app.id)
         do {
             let jobID = try await client.upgradeApp(name: app.id)
-            jobIDToAppID[jobID] = app.id
+            operations.bind(jobID: jobID, to: app.id)
             // Surface RUNNING → DEPLOYING before the job stream fires.
             await loadSnapshot()
         } catch {
-            upgradingApps.remove(app.id)
-            print("[upgrade] \(app.id) failed: \(error.localizedDescription)")
+            operations.cancel(app.id)
+            Log.dashboard.error(
+                "upgrade \(app.id, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -113,7 +199,7 @@ final class DashboardViewModel {
     private enum AppToggleAction { case start, stop }
 
     private func toggleApp(_ app: TNApp, action: AppToggleAction) async {
-        guard !togglingApps.contains(app.id) else { return }
+        guard !operations.isToggling(app.id) else { return }
         guard let idx = apps.firstIndex(where: { $0.id == app.id }) else { return }
         guard let client else {
             // Demo mode: flip the row locally so reviewers see the buttons working.
@@ -121,7 +207,7 @@ final class DashboardViewModel {
             return
         }
         let originalState = apps[idx].state
-        togglingApps.insert(app.id)
+        operations.beginToggle(app.id)
         // Surface STOPPING / DEPLOYING immediately — TrueNAS sometimes jumps
         // straight to the terminal state on fast operations and never publishes
         // the transitional snapshot.
@@ -132,91 +218,39 @@ final class DashboardViewModel {
             case .start: jobID = try await client.startApp(name: app.id)
             case .stop:  jobID = try await client.stopApp(name: app.id)
             }
-            jobIDToAppID[jobID] = app.id
+            operations.bind(jobID: jobID, to: app.id)
         } catch {
-            togglingApps.remove(app.id)
+            operations.cancel(app.id)
             if let idx = apps.firstIndex(where: { $0.id == app.id }) {
                 apps[idx].state = originalState
             }
-            print("[toggle] \(app.id) failed: \(error.localizedDescription)")
+            Log.dashboard.error(
+                "toggle \(app.id, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
-    // MARK: - Internals
+    // MARK: - Loading
 
-    private func connect(endpoint: URL, apiKey: String, persistOnSuccess: Bool) async {
-        if DemoMode.matches(endpoint: endpoint, apiKey: apiKey) {
-            await enterDemoMode(endpoint: endpoint, apiKey: apiKey, persistOnSuccess: persistOnSuccess)
-            return
-        }
-        authState = .connecting
-        do {
-            try await connectOnce(endpoint: endpoint, apiKey: apiKey)
-        } catch {
-            self.client = nil
-            authState = .loggedOut(error: error.localizedDescription)
-            return
-        }
-        let creds = Credentials(endpoint: endpoint, apiKey: apiKey)
-        if persistOnSuccess {
-            try? credentials.save(creds)
-        }
-        startReconnectController(credentials: creds)
+    /// Seeds icons from the on-disk cache so the app list paints immediately on a cold
+    /// launch rather than waiting on the catalog fetch.
+    private func loadCachedCatalogIcons() {
+        guard appIcons.isEmpty, let host = endpoint?.host else { return }
+        let cached = AppIconCache.load(host: host)
+        if !cached.isEmpty { appIcons = cached }
     }
 
-    /// Raw connect — throws on any failure so the reconnect controller can
-    /// classify the error. Owns the post-connect data load and subscriptions.
-    private func connectOnce(endpoint: URL, apiKey: String) async throws {
-        await stop()
-        let client = try TrueNASClient(endpoint: endpoint, apiKey: apiKey)
-        try await client.connect()
-
-        self.client = client
-        self.endpoint = endpoint
-        authState = .loggedIn
-
-        async let snapshot: Void = loadSnapshot()
-        async let icons: Void = loadCatalogIcons()
-        async let updateStatus: Void = loadSystemUpdateStatus()
-        _ = await (snapshot, icons, updateStatus)
-        startSubscriptions()
-        startPeriodicRefresh()
-    }
-
-    private func startReconnectController(credentials creds: Credentials) {
-        reconnectController?.stop()
-        let controller = ReconnectController()
-        controller.attemptConnect = { [weak self] in
-            try await self?.connectOnce(endpoint: creds.endpoint, apiKey: creds.apiKey)
-        }
-        controller.onEvent = { [weak self] event in
-            guard let self else { return }
-            switch event {
-            case .willEnterReconnecting:
-                if authState == .connecting { authState = .reconnecting }
-            case .authFailure(let error):
-                credentials.clear()
-                client = nil
-                authState = .loggedOut(error: error.localizedDescription)
-                reconnectController?.stop()
-                reconnectController = nil
-            }
-        }
-        reconnectController = controller
-        controller.start()
-    }
-
-    private func notifyConnectionLost() {
-        guard authState == .loggedIn else { return }
-        authState = .reconnecting
-        reconnectController?.resetAndRetryNow()
-    }
-
-    private func loadCatalogIcons() async {
-        guard let client, appIcons.isEmpty else { return }
-        if let icons = try? await client.fetchCatalogIcons(), !icons.isEmpty {
-            appIcons = icons
-        }
+    /// Pulls `catalog.apps` at most once per session, and only when an installed app
+    /// isn't already covered by the cached map — the payload is megabytes.
+    private func refreshCatalogIconsIfNeeded() async {
+        guard let client, let host = endpoint?.host, !didFetchCatalogIcons else { return }
+        guard apps.contains(where: { appIcons[$0.catalogName ?? $0.name] == nil }) else { return }
+        guard let icons = try? await client.fetchCatalogIcons(), !icons.isEmpty else { return }
+        // Only a fetch that actually produced icons is worth not repeating. Marking it
+        // done up front meant a connection dropping mid-fetch suppressed every later
+        // attempt for the rest of the login, however many times we reconnected.
+        didFetchCatalogIcons = true
+        if icons != appIcons { appIcons = icons }
+        AppIconCache.save(icons, host: host)
     }
 
     private func loadSystemUpdateStatus() async {
@@ -244,12 +278,12 @@ final class DashboardViewModel {
     }
 
     /// Fetches `app.query` and assigns, keeping the optimistic transitional
-    /// state for any app currently in `togglingApps` (TrueNAS may briefly
+    /// state for any app with an operation in flight (TrueNAS may briefly
     /// echo the pre-action state before the job terminates).
     private func refreshApps() async {
         guard let client, let updated = try? await client.fetchApps() else { return }
         let merged: [TNApp] = updated.map { fetched in
-            guard togglingApps.contains(fetched.id),
+            guard operations.isToggling(fetched.id),
                   let existing = apps.first(where: { $0.id == fetched.id })
             else { return fetched }
             var copy = fetched
@@ -262,6 +296,8 @@ final class DashboardViewModel {
         }
     }
 
+    // MARK: - Subscriptions
+
     private func startPeriodicRefresh() {
         let task = Task { [weak self] in
             while !Task.isCancelled {
@@ -273,9 +309,7 @@ final class DashboardViewModel {
         workers.append(task)
     }
 
-    private func startSubscriptions() {
-        guard let client else { return }
-
+    private func startSubscriptions(client: TrueNASClient) {
         let statsTask = Task { [weak self] in
             guard let stream = try? await client.subscribeRealtime() else {
                 if !Task.isCancelled { self?.notifyConnectionLost() }
@@ -283,18 +317,14 @@ final class DashboardViewModel {
             }
             for await snapshot in stream {
                 if Task.isCancelled { return }
-                await MainActor.run {
-                    guard let self else { return }
-                    // TrueNAS emits partial frames (CPU only, then memory only); merge so a
-                    // later frame doesn't blank out previously-seen fields.
-                    let merged: RealtimeStats = {
-                        if var current = self.stats { current.merge(snapshot); return current }
-                        return snapshot
-                    }()
-                    if merged != self.stats {
-                        self.stats = merged
-                        self.lastUpdated = Date()
-                    }
+                guard let self else { return }
+                // TrueNAS emits partial frames (CPU only, then memory only); merge so a
+                // later frame doesn't blank out previously-seen fields.
+                var merged = stats ?? RealtimeStats()
+                merged.merge(snapshot)
+                if merged != stats {
+                    stats = merged
+                    lastUpdated = Date()
                 }
             }
             if !Task.isCancelled { self?.notifyConnectionLost() }
@@ -325,19 +355,8 @@ final class DashboardViewModel {
             guard let stream = try? await client.subscribeJobs() else { return }
             for await job in stream {
                 if Task.isCancelled { return }
-                await MainActor.run {
-                    guard let self else { return }
-                    guard let appID = self.jobIDToAppID[job.id] else { return }
-                    if job.isTerminal {
-                        self.upgradingApps.remove(appID)
-                        self.togglingApps.remove(appID)
-                        self.jobIDToAppID.removeValue(forKey: job.id)
-                        // togglingApps just cleared, so a fresh fetchApps is no
-                        // longer filtered by the merge step. Cover the case where
-                        // the state didn't change (no app.query event will fire).
-                        Task { [weak self] in await self?.refreshApps() }
-                    }
-                }
+                guard let self else { return }
+                operations.note(job)
             }
         }
         workers.append(jobsTask)
@@ -361,12 +380,10 @@ final class DashboardViewModel {
                 if Task.isCancelled { return }
                 if let updated = try? await fetch() {
                     if Task.isCancelled { return }
-                    await MainActor.run {
-                        guard let self else { return }
-                        if updated != self[keyPath: keyPath] {
-                            self[keyPath: keyPath] = updated
-                            self.lastUpdated = Date()
-                        }
+                    guard let self else { return }
+                    if updated != self[keyPath: keyPath] {
+                        self[keyPath: keyPath] = updated
+                        lastUpdated = Date()
                     }
                 }
                 try? await Task.sleep(for: .milliseconds(250))
@@ -375,26 +392,25 @@ final class DashboardViewModel {
         }
     }
 
-    private func stop() async {
-        for task in workers { task.cancel() }
-        workers.removeAll()
-        // Clear here so a reconnect can't leak stale job→app bindings whose
-        // terminal events were swallowed by the dropped subscription.
-        upgradingApps = []
-        togglingApps = []
-        jobIDToAppID = [:]
-        stopAppStatsSubscription()
-        demoTickerTask?.cancel()
-        demoTickerTask = nil
-        await client?.disconnect()
-        client = nil
+    /// Streams `app.stats` for as long as the caller's task lives. `AppListView` drives
+    /// this from `.task`, so the subscription is tied to the screen actually being on
+    /// screen rather than to a side effect of navigating.
+    func streamAppStats() async {
+        defer { appStats = [:] }
+        guard let client, let stream = try? await client.subscribeAppStats() else { return }
+        for await frame in stream {
+            let next = Dictionary(uniqueKeysWithValues: frame.map { ($0.appName, $0) })
+            if next != appStats { appStats = next }
+        }
     }
+
+    // MARK: - Demo mode
 
     private func enterDemoMode(endpoint: URL, apiKey: String, persistOnSuccess: Bool) async {
         authState = .connecting
         await stop()
         self.endpoint = endpoint
-        DemoMode.populate(self)
+        apply(DemoMode.snapshot())
         authState = .loggedIn
         if persistOnSuccess {
             try? credentials.save(Credentials(endpoint: endpoint, apiKey: apiKey))
@@ -402,51 +418,30 @@ final class DashboardViewModel {
         startDemoTicker()
     }
 
+    private func apply(_ demo: DemoSnapshot) {
+        systemInfo = demo.systemInfo
+        pools = demo.pools
+        apps = demo.apps
+        alerts = demo.alerts
+        stats = demo.stats
+        appIcons = [:]
+        systemUpdateAvailable = false
+        lastUpdated = Date()
+    }
+
     private func startDemoTicker() {
         demoTickerTask?.cancel()
         demoTickerTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2))
-                if Task.isCancelled { return }
-                await MainActor.run {
-                    guard let self else { return }
-                    let cpu = max(2, min(85,
-                        (self.stats?.cpuUsagePercent ?? 12) + Double.random(in: -4...4)))
-                    let memTotal: Int64 = self.stats?.memoryTotalBytes ?? (32 * 1024 * 1024 * 1024)
-                    let memUsed = max(Int64(0), min(memTotal,
-                        (self.stats?.memoryUsedBytes ?? 8 * 1024 * 1024 * 1024)
-                            + Int64.random(in: -200_000_000...200_000_000)))
-                    var next = self.stats ?? RealtimeStats()
-                    next.merge(RealtimeStats(cpuUsagePercent: cpu,
-                                             memoryUsedBytes: memUsed,
-                                             memoryTotalBytes: memTotal))
-                    self.stats = next
-                    self.lastUpdated = Date()
-                }
+                guard !Task.isCancelled, let self else { return }
+                stats = DemoMode.nextStats(after: stats)
+                lastUpdated = Date()
             }
         }
     }
 
-    private func startAppStatsSubscription() {
-        guard appStatsTask == nil, let client else { return }
-        appStatsTask = Task { [weak self] in
-            guard let stream = try? await client.subscribeAppStats() else { return }
-            for await frame in stream {
-                if Task.isCancelled { return }
-                await MainActor.run {
-                    guard let self else { return }
-                    let next = Dictionary(uniqueKeysWithValues: frame.map { ($0.appName, $0) })
-                    if next != self.appStats { self.appStats = next }
-                }
-            }
-        }
-    }
-
-    private func stopAppStatsSubscription() {
-        appStatsTask?.cancel()
-        appStatsTask = nil
-        if !appStats.isEmpty { appStats = [:] }
-    }
+    // MARK: - Endpoint
 
     static func normalizeEndpoint(_ raw: String) -> URL? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -454,9 +449,7 @@ final class DashboardViewModel {
         let withScheme = trimmed.contains("://") ? trimmed : "https://\(trimmed)"
         guard var components = URLComponents(string: withScheme) else { return nil }
         // Strip trailing slashes / path so we can append /api/current ourselves.
-        components.path = ""
-        components.query = nil
-        components.fragment = nil
+        components.stripPathQueryAndFragment()
         guard components.host?.isEmpty == false else { return nil }
         return components.url
     }

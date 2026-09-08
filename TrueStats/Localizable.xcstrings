@@ -351,6 +351,47 @@
         }
       }
     },
+    "Allow TrueStats in System Settings → General → Login Items." : {
+      "comment" : "Shown when enabling launch-at-login needs user approval",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Erlaube TrueStats in Systemeinstellungen → Allgemein → Anmeldeobjekte."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Permite TrueStats en Ajustes del Sistema → General → Ítems de inicio de sesión."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Autorisez TrueStats dans Réglages Système → Général → Ouverture."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "システム設定 → 一般 → ログイン項目 で TrueStats を許可してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "请在“系统设置 → 通用 → 登录项”中允许 TrueStats。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "請在「系統設定 → 一般 → 登入項目」中允許 TrueStats。"
+          }
+        }
+      }
+    },
     "API key" : {
       "localizations" : {
         "de" : {
