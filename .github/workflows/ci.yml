@@ -12,19 +12,21 @@ concurrency:
 jobs:
   test:
     name: Build and test
-    runs-on: macos-latest
+    runs-on: xcode-27
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select the newest installed Xcode
+      - name: Verify Swift 6.4 toolchain
         run: |
           set -euo pipefail
-          latest="$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
-          echo "Using $latest"
-          sudo xcode-select -switch "$latest"
           xcodebuild -version
-          swift --version
+          swift_version="$(swift --version)"
+          echo "$swift_version"
+          if [[ "$swift_version" != *"Apple Swift version 6.4 "* ]]; then
+            echo "Expected Apple Swift 6.4 from the Xcode 27 runner." >&2
+            exit 1
+          fi
 
       # Signing is disabled: the runner has no access to the development team, and
       # unit tests only need the host app to launch, not to be distributable.
@@ -51,15 +53,21 @@ jobs:
 
   build-release:
     name: Release build
-    runs-on: macos-latest
+    runs-on: xcode-27
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select the newest installed Xcode
+      - name: Verify Swift 6.4 toolchain
         run: |
           set -euo pipefail
-          sudo xcode-select -switch "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          xcodebuild -version
+          swift_version="$(swift --version)"
+          echo "$swift_version"
+          if [[ "$swift_version" != *"Apple Swift version 6.4 "* ]]; then
+            echo "Expected Apple Swift 6.4 from the Xcode 27 runner." >&2
+            exit 1
+          fi
 
       # Catches warnings and errors that only the optimizer surfaces, which the
       # Debug test job would otherwise miss.

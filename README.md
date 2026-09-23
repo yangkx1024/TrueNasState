@@ -11,13 +11,17 @@ A lightweight macOS menu-bar app for monitoring a TrueNAS SCALE server. It lives
 
 ## Requirements
 
-- macOS 14.0 or later
-- Xcode 16 or later — the project builds in the Swift 6 language mode (developed against Xcode 26)
+- macOS 14.0 or later (deployment target)
+- Xcode 16 or later with a Swift 6 compiler
 - A TrueNAS SCALE server reachable over `https://` with a user-linked API key
 
 ## Building
 
 Open `TrueNasState.xcodeproj` in Xcode and run the `TrueStats` scheme. The project uses automatic code signing and the hardened runtime; signing requires a local development team.
+
+The targets use the Swift 6 language mode (`SWIFT_VERSION = 6.0`) and remain compatible
+with Swift 6 compilers. CI builds with Xcode 27 to validate the project against the Swift
+6.4 compiler.
 
 The app is a status-bar agent — there is no Dock icon and no main window. After launching, look for the drive icon in the menu bar.
 
