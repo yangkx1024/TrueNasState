@@ -31,6 +31,24 @@ struct AppOperationTrackerTests {
         #expect(!tracker.isPending("nextcloud"))
     }
 
+    @Test("an in-flight operation keeps another operation off the same app")
+    func rejectsOverlappingOperations() {
+        let (tracker, finished) = makeTracker()
+        #expect(tracker.beginToggle("plex"))
+        tracker.bind(jobID: 10, to: "plex")
+        #expect(!tracker.beginUpgrade("plex"))
+        #expect(tracker.isToggling("plex"))
+        tracker.note(TNJob(id: 10, state: .success))
+        #expect(finished() == ["plex"])
+
+        #expect(tracker.beginUpgrade("plex"))
+        tracker.bind(jobID: 11, to: "plex")
+        #expect(!tracker.beginToggle("plex"))
+        #expect(tracker.isUpgrading("plex"))
+        tracker.note(TNJob(id: 11, state: .success))
+        #expect(finished() == ["plex", "plex"])
+    }
+
     @Test("a terminal event that lands before the job id is bound still completes it")
     func terminalBeforeBinding() {
         // The exact ordering that used to leave a row spinning: the operation starts,

@@ -40,16 +40,22 @@ final class AppOperationTracker {
     func isToggling(_ appID: String) -> Bool { toggling.contains(appID) }
     func isPending(_ appID: String) -> Bool { isUpgrading(appID) || isToggling(appID) }
 
-    func beginUpgrade(_ appID: String) {
+    @discardableResult
+    func beginUpgrade(_ appID: String) -> Bool {
+        guard !isPending(appID) else { return false }
         upgrading.insert(appID)
         awaitingBinding.insert(appID)
         startWatchdog(for: appID)
+        return true
     }
 
-    func beginToggle(_ appID: String) {
+    @discardableResult
+    func beginToggle(_ appID: String) -> Bool {
+        guard !isPending(appID) else { return false }
         toggling.insert(appID)
         awaitingBinding.insert(appID)
         startWatchdog(for: appID)
+        return true
     }
 
     /// Ties the job the server just handed back to the app it belongs to.
