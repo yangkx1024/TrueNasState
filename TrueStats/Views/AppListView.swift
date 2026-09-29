@@ -11,7 +11,19 @@ struct AppListView: View {
         }
         let lastID = apps.last?.id
         VStack(alignment: .leading, spacing: 8) {
-            BackHeader(title: "Apps")
+            BackHeader(title: "Apps") {
+                if !viewModel.upgradeableApps.isEmpty {
+                    HStack(spacing: 4) {
+                        Text("Update All")
+                        appRowIconButton(systemImage: "arrow.triangle.2.circlepath",
+                                         label: String(localized: "Update all apps"),
+                                         action: { Task { await viewModel.upgradeAllApps() } })
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .accessibilityElement(children: .combine)
+                }
+            }
             Divider()
             if apps.isEmpty {
                 Text("No apps installed.")

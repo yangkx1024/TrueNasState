@@ -67,6 +67,10 @@ final class DashboardViewModel {
 
     func isUpgrading(_ appID: String) -> Bool { operations.isUpgrading(appID) }
     func isToggling(_ appID: String) -> Bool { operations.isToggling(appID) }
+    /// Apps with an upgrade available that isn't already in flight.
+    var upgradeableApps: [TNApp] {
+        apps.filter { $0.hasUpgrade && !operations.isUpgrading($0.id) }
+    }
 
     func navigate(to screen: Screen) {
         self.screen = screen
@@ -178,18 +182,34 @@ final class DashboardViewModel {
 
     // MARK: - App operations
 
-    func upgradeApp(_ app: TNApp) async {
-        guard let client, !operations.isUpgrading(app.id) else { return }
+    func upgradeApp(_ app: TNApp) async { await upgrade([app]) }
+    func upgradeAllApps() async { await upgrade(upgradeableApps) }
+
+    /// Requests every upgrade concurrently, then refreshes the app list once to
+    /// surface RUNNING → DEPLOYING before the job stream fires.
+    private func upgrade(_ targets: [TNApp]) async {
+        let requests = targets.map { app in Task { await requestUpgrade(app) } }
+        var anyStarted = false
+        for request in requests {
+            if await request.value { anyStarted = true }
+        }
+        if anyStarted { await refreshApps() }
+    }
+
+    /// Starts the `app.upgrade` job and binds it to the tracker. Returns false when
+    /// nothing was started (demo mode, already upgrading, or the RPC failed).
+    private func requestUpgrade(_ app: TNApp) async -> Bool {
+        guard let client, !operations.isUpgrading(app.id) else { return false }
         operations.beginUpgrade(app.id)
         do {
             let jobID = try await client.upgradeApp(name: app.id)
             operations.bind(jobID: jobID, to: app.id)
-            // Surface RUNNING → DEPLOYING before the job stream fires.
-            await loadSnapshot()
+            return true
         } catch {
             operations.cancel(app.id)
             Log.dashboard.error(
                 "upgrade \(app.id, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+            return false
         }
     }
 
