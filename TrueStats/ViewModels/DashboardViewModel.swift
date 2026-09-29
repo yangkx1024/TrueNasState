@@ -28,6 +28,7 @@ final class DashboardViewModel {
     private let credentials = CredentialStore.shared
     private let connection = ConnectionCoordinator()
     private let operations = AppOperationTracker()
+    private let appRefreshGate = AppRefreshGate()
     private var workers: [Task<Void, Never>] = []
     private var didBootstrap = false
     private var demoTickerTask: Task<Void, Never>?
@@ -67,9 +68,9 @@ final class DashboardViewModel {
 
     func isUpgrading(_ appID: String) -> Bool { operations.isUpgrading(appID) }
     func isToggling(_ appID: String) -> Bool { operations.isToggling(appID) }
-    /// Apps with an upgrade available that isn't already in flight.
+    /// Apps with an upgrade available and no other operation in flight.
     var upgradeableApps: [TNApp] {
-        apps.filter { $0.hasUpgrade && !operations.isUpgrading($0.id) }
+        apps.filter { $0.hasUpgrade && !operations.isPending($0.id) }
     }
 
     func navigate(to screen: Screen) {
@@ -197,10 +198,13 @@ final class DashboardViewModel {
     }
 
     /// Starts the `app.upgrade` job and binds it to the tracker. Returns false when
-    /// nothing was started (demo mode, already upgrading, or the RPC failed).
+    /// nothing was started (demo mode, no eligible update, an in-flight operation,
+    /// or the RPC failed).
     private func requestUpgrade(_ app: TNApp) async -> Bool {
-        guard let client, !operations.isUpgrading(app.id) else { return false }
-        operations.beginUpgrade(app.id)
+        guard let client,
+              apps.contains(where: { $0.id == app.id && $0.hasUpgrade }),
+              operations.beginUpgrade(app.id)
+        else { return false }
         do {
             let jobID = try await client.upgradeApp(name: app.id)
             operations.bind(jobID: jobID, to: app.id)
@@ -219,15 +223,15 @@ final class DashboardViewModel {
     private enum AppToggleAction { case start, stop }
 
     private func toggleApp(_ app: TNApp, action: AppToggleAction) async {
-        guard !operations.isToggling(app.id) else { return }
         guard let idx = apps.firstIndex(where: { $0.id == app.id }) else { return }
+        guard !operations.isPending(app.id) else { return }
         guard let client else {
             // Demo mode: flip the row locally so reviewers see the buttons working.
             apps[idx].state = (action == .start) ? .running : .stopped
             return
         }
         let originalState = apps[idx].state
-        operations.beginToggle(app.id)
+        guard operations.beginToggle(app.id) else { return }
         // Surface STOPPING / DEPLOYING immediately — TrueNAS sometimes jumps
         // straight to the terminal state on fast operations and never publishes
         // the transitional snapshot.
@@ -287,12 +291,11 @@ final class DashboardViewModel {
         guard let client else { return }
         async let info = try? client.fetchSystemInfo()
         async let poolsTask = try? client.fetchPools()
-        async let appsTask = try? client.fetchApps()
+        async let appsTask: Void = refreshApps()
         async let alertsTask = try? client.fetchAlerts()
-        let (i, p, ap, a) = await (info, poolsTask, appsTask, alertsTask)
+        let (i, p, _, a) = await (info, poolsTask, appsTask, alertsTask)
         if let i, i != systemInfo { systemInfo = i }
         if let p, p != pools { pools = p }
-        if let ap, ap != apps { apps = ap }
         if let a, a != alerts { alerts = a }
         lastUpdated = Date()
     }
@@ -301,7 +304,12 @@ final class DashboardViewModel {
     /// state for any app with an operation in flight (TrueNAS may briefly
     /// echo the pre-action state before the job terminates).
     private func refreshApps() async {
+        await appRefreshGate.run { [weak self] in await self?.fetchAndMergeApps() }
+    }
+
+    private func fetchAndMergeApps() async {
         guard let client, let updated = try? await client.fetchApps() else { return }
+        guard self.client === client else { return }
         let merged: [TNApp] = updated.map { fetched in
             guard operations.isToggling(fetched.id),
                   let existing = apps.first(where: { $0.id == fetched.id })

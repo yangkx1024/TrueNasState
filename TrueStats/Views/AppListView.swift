@@ -85,7 +85,7 @@ private struct AppRow: View {
                     }
                     Spacer()
                     if let state = app.state {
-                        AppStateControl(state: state, isToggling: isToggling,
+                        AppStateControl(state: state, isBusy: isToggling || isUpgrading,
                                         onStart: onStart, onStop: onStop)
                     }
                 }
@@ -113,9 +113,11 @@ private struct AppRow: View {
         } else if app.hasUpgrade {
             HStack(spacing: 4) {
                 Text("Update")
-                appRowIconButton(systemImage: "arrow.triangle.2.circlepath",
-                                 label: String(localized: "Update app"),
-                                 action: onUpgrade)
+                if !isToggling {
+                    appRowIconButton(systemImage: "arrow.triangle.2.circlepath",
+                                     label: String(localized: "Update app"),
+                                     action: onUpgrade)
+                }
             }
             .foregroundStyle(.orange)
             .accessibilityElement(children: .combine)
@@ -279,7 +281,7 @@ private final class SVGWebViewDelegate: NSObject, WKNavigationDelegate {
 
 private struct AppStateControl: View {
     let state: AppState
-    let isToggling: Bool
+    let isBusy: Bool
     let onStart: () -> Void
     let onStop: () -> Void
 
@@ -295,9 +297,9 @@ private struct AppStateControl: View {
 
     @ViewBuilder
     private var iconSlot: some View {
-        // .deploying/.stopping covers the full transition window; isToggling
-        // covers the gap between click and TrueNAS reporting the new state.
-        if isToggling || state == .deploying || state == .stopping {
+        // .deploying/.stopping covers the full transition window; isBusy
+        // covers the gap before TrueNAS reports the new state.
+        if isBusy || state == .deploying || state == .stopping {
             ProgressView().controlSize(.mini)
         } else if state == .running {
             appRowIconButton(systemImage: "stop.circle.fill",
