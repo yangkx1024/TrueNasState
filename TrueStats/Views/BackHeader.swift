@@ -1,9 +1,11 @@
 import SwiftUI
 
 /// Header used by subscreens of the dashboard (Apps, Settings): a back chevron
-/// that returns to `.dashboard` plus a left-aligned title.
-struct BackHeader: View {
+/// that returns to `.dashboard`, a left-aligned title, and optional trailing
+/// content (e.g. a screen-level action).
+struct BackHeader<Trailing: View>: View {
     let title: LocalizedStringKey
+    @ViewBuilder var trailing: () -> Trailing
     @Environment(DashboardViewModel.self) private var viewModel
 
     var body: some View {
@@ -18,6 +20,13 @@ struct BackHeader: View {
             Text(title)
                 .font(.headline)
             Spacer()
+            trailing()
         }
+    }
+}
+
+extension BackHeader where Trailing == EmptyView {
+    init(title: LocalizedStringKey) {
+        self.init(title: title) { EmptyView() }
     }
 }
