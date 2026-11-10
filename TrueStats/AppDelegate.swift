@@ -3,9 +3,10 @@ import Observation
 import SwiftUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
+    private var globalClickMonitor: Any?
     private var lastBadge: (AuthState, Int)?
     private let viewModel = DashboardViewModel()
 
@@ -22,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover = NSPopover()
         popover.behavior = .transient
         popover.animates = true
+        popover.delegate = self
         popover.contentViewController = NSHostingController(
             rootView: RootMenuView().environment(viewModel)
         )
@@ -65,6 +67,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let button = statusItem.button else { return }
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeFirstResponder(nil)
+        startOutsideClickMonitor()
+    }
+
+    private func startOutsideClickMonitor() {
+        guard globalClickMonitor == nil else { return }
+
+        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.popover.isShown else { return }
+                self.popover.performClose(nil)
+            }
+        }
+    }
+
+    func popoverWillClose(_ notification: Notification) {
+        if let monitor = globalClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalClickMonitor = nil
+        }
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        viewModel.navigate(to: .dashboard)
     }
 
     private static let driveIcon: NSImage = {
